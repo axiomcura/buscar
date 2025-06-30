@@ -4,7 +4,7 @@
 #
 # This notebook documents the workflow for downloading and processing data from the JUMP Cell Painting dataset, available in the Cell Painting Gallery.
 #
-# We focus on datasets where cells have been perturbed by overexpression of genes using open reading frame (ORF) vectors, which artificially increase the production of specific proteins.
+# We focus on datasets where cells have been perturbed by overexpression of genes using open reading frame (ORF) vectors.
 #
 # Key steps in this workflow:
 # - Load configuration and metadata from a YAML file.
@@ -86,13 +86,13 @@ exp_metadata.write_csv(metadata_dir / "CPJUMP1-experimental-metadata.tsv", separ
 exp_metadata.head()
 
 
-# To efficiently organize and download the CPJUMP1 data, we generate a dictionary (`batch_and_time_delay_dict`) that maps each experimental timepoint (e.g., Day0, Day1, Week2, Week4, DL) to its corresponding batch identifier.
+# To efficiently organize and download the CPJUMP1 data, we generate a dictionary (`batch_and_time_delay_dict`) that maps each experimental timepoint (e.g., Day0, Day1, Week2, Week4)  to its corresponding batch identifier.
 #
 # This mapping enables us to:
-# - Group and save data files according to their acquisition timepoints after initial treatment.
-# - Treat each delayed timepoint as a distinct batch for downstream processing.
+# - Group and save data files according to their acquisition time points after initial treatment.
+# - Treat each delayed time point as a distinct batch for downstream processing.
 
-# In[5]:
+# In[ ]:
 
 
 # extracting the unique batches and time delays from the experimental metadata
@@ -108,7 +108,6 @@ for row in batch_and_time_delay.rows(named=True):
     time_delay = row["Time_delay"]
 
     # ignore CPJUMP1_DL batch
-    # there is no negative controled wells for this batch
     if batch.endswith("CPJUMP1_DL"):
         continue
     else:
