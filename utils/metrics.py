@@ -1,15 +1,28 @@
+"""
+This module provides metrics for quantifying phenotypic activity, particularly by comparing
+two morphological signatures ("on" and "off"). These signatures represent distinct sets of
+features within morphological profiles, enabling the measurement of differences between
+reference and experimental conditions.
+"""
 import itertools
+from typing import Literal
 
 import numpy as np
 import ot
 import polars as pl
-from scipy.spatial.distance import cdist
+from beartype import beartype
 
 
 def _generate_on_off_profiles(
     profiles: pl.DataFrame, on_signature: list[str], off_signature: list[str]
 ):
     """Generate on and off profiles from the given profiles.
+    This function generates two DataFrames: one for on-morphology profiles, containing
+    morphological features that are significantly different between cellular states
+    (e.g., healthy vs. diseased), and another for off-morphology profiles, containing
+    features that are not significant for these states. Both off and on-morphology profiles
+    are then used to compute phenotypic activity and interpret cellular dynamics. This
+    will generate two scores: on and off scores for the morphological profiles.
 
     Parameters
     ----------
@@ -30,12 +43,12 @@ def _generate_on_off_profiles(
     return on_profiles, off_profiles
 
 
-def earths_movers_distance(
+def compute_earth_movers_distance(
     ref_profiles: pl.DataFrame,
     exp_profiles: pl.DataFrame,
     on_signature: list[str],
     off_signature: list[str],
-    distance_metric: str = "euclidean",
+    distance_metric: Literal["euclidean", "cosine", "sqeuclidean"] = "euclidean",
 ):
     """Compute the Earth Mover's Distance (EMD) between reference and experimental profiles.
 
@@ -53,15 +66,27 @@ def earths_movers_distance(
         Morphological profiles that are in the on-morphology signature.
     off_signature : list[str]
         The list of features to include in the off profile.
-    distance_metric : str, optional
+    distance_metric : Literal, optional
         Distance metric to use when generating the distance matrices.
+        Must be one of: "euclidean", "cosine", "sqeuclidean".
     Returns
     -------
     tuple
         A tuple containing the EMD for the on-morphology and off-morphology profiles.
+
+    Notes
+    -----
+        Earth mover's distance citation: https://doi.org/10.1023/A:1026543900054
     """
 
-    # compute a uniform distribution of weights for each point
+    # Check for empty DataFrames to avoid division by zero
+    if ref_profiles.shape[0] == 0 or exp_profiles.shape[0] == 0:
+        raise ValueError("ref_profiles and exp_profiles must not be empty.")
+    if exp_profiles.shape[0] == 0:
+        raise ValueError("exp_profiles is empty, cannot compute weights.")
+    weights_exp = np.ones(exp_profiles.shape[0]) / exp_profiles.shape[0]
+    # Compute a uniform distribution of weights for each point
+    # This allows for each cell to be weighted equally in the EMD calculation.
     weights_ref = np.ones(ref_profiles.shape[0]) / ref_profiles.shape[0]
     weights_exp = np.ones(exp_profiles.shape[0]) / exp_profiles.shape[0]
 
@@ -73,11 +98,11 @@ def earths_movers_distance(
         exp_profiles, on_signature, off_signature
     )
 
-    # create distance matrices between reference and experimental profiles.
-    # these matrices quantify the cost of moving mass between distributions
+    # Create distance matrices between reference and experimental profiles.
+    # These matrices quantify the cost of moving mass between distributions
     # in the Earth Mover's Distance calculation.
-    off_M = cdist(off_ref_profiles, off_exp_profiles, metric=distance_metric)
-    on_M = cdist(on_ref_profiles, on_exp_profiles, metric=distance_metric)
+    off_M = ot.dist(x=off_ref_profiles.to_numpy(), x2=off_exp_profiles.to_numpy(), metric=distance_metric)
+    on_M = ot.dist(x=on_ref_profiles.to_numpy(), x2=on_exp_profiles.to_numpy(), metric=distance_metric)
 
     # compute on and off emd scores
     on_emd = ot.emd2(weights_ref, weights_exp, on_M)
@@ -86,107 +111,110 @@ def earths_movers_distance(
     return on_emd, off_emd
 
 
+@beartype
 def measure_phenotypic_activity(
     ref_profile: pl.DataFrame,
     exp_profiles: pl.DataFrame,
     on_signature: list[str],
     off_signature: list[str],
-    method: str = "emd",
+    method: Literal["emd"] = "emd",
     cluster_col: str = "Metadata_cluster",
     treatment_col: str = "Metadata_treatment",
-    emd_dist_matrix_method: str = "euclidean",
+    emd_dist_matrix_method: Literal["euclidean", "cosine", "sqeuclidean"] = "euclidean",
 ) -> pl.DataFrame:
     """Measure phenotypic activity between reference and experimental profiles using
     on- and off- morphology signatures.
 
+    This function computes distance metrics between reference and experimental cell
+    populations across different clusters and treatments. It generates pairwise
+    comparisons for all combinations of reference clusters, experimental clusters,
+    and treatments, returning both on-morphology and off-morphology distance scores.
+
     Parameters
     ----------
     ref_profile : pl.DataFrame
-        Reference profile DataFrame.
+        Reference profile DataFrame containing morphological features and cluster metadata.
+        Must include the column specified by `cluster_col`.
     exp_profiles : pl.DataFrame
-        Experimental profiles DataFrame.
+        Experimental profiles DataFrame containing morphological features, cluster, and
+        treatment metadata. Must include columns specified by `cluster_col` and `treatment_col`.
     on_signature : list[str]
-        Morphological profiles that are in the on-morphology signature.
+        List of morphological feature column names that constitute the on-morphology
+        signature (features significantly different between cellular states).
     off_signature : list[str]
-        The list of features to include in the off profile.
-    method : str, optional
-        Method to use for measuring phenotypic activity, by default "emd"
+        List of morphological feature column names that constitute the off-morphology
+        signature (features not significantly different between cellular states).
+    method : Literal["emd"], optional
+        Distance calculation method. Currently only supports "emd" (Earth Mover's Distance),
+        by default "emd".
     cluster_col : str, optional
-        Column name for clustering information, by default "Metadata_cluster"
+        Column name containing cluster identifiers in both reference and experimental
+        DataFrames, by default "Metadata_cluster".
     treatment_col : str, optional
-        Column name for treatment information, by default "Metadata_treatment"
-    emd_dist_matrix_method : str, optional
-        Distance metric to use when generating the distance matrices, by default "euclidean"
+        Column name containing treatment identifiers in the experimental DataFrame,
+        by default "Metadata_treatment".
+    emd_dist_matrix_method : Literal["euclidean", "cosine", "sqeuclidean"], optional
+        Distance metric used for computing the cost matrix in EMD calculations,
+        by default "euclidean".
 
     Returns
     -------
     pl.DataFrame
-        DataFrame containing the phenotypic activity measurements.
+        DataFrame with columns: 'ref_cluster', 'treatment', 'exp_cluster', 'on_dist', 'off_dist'.
+        Each row represents the phenotypic activity measurement between a specific reference
+        cluster and experimental cluster-treatment combination.
+        The returned DataFrame will be empty if no valid combinations are found.
 
     Raises
     ------
-    TypeError
-        If any of the input parameters are of the wrong type.
-    TypeError
-        If any of the input parameters are of the wrong type.
-    TypeError
-        If any of the input parameters are of the wrong type.
     ValueError
-        If the method is not recognized.
+        If the specified method is not "emd".
+    KeyError
+        If required columns (cluster_col, treatment_col) are missing from input DataFrames.
+    ValueError
+        If on_signature or off_signature contain column names not present in the DataFrames.
     """
-    # type check
-    if not isinstance(ref_profile, pl.DataFrame):
-        raise TypeError("ref_profile must be a polars DataFrame")
-    if not isinstance(exp_profiles, pl.DataFrame):
-        raise TypeError("exp_profiles must be a polars DataFrame")
-    if not isinstance(method, str):
-        raise TypeError("method must be a string")
 
-    # generate all the posible combiations of cluster between these two profiles
-    cluster_combinations = list(
-        itertools.product(
-            ref_profile[cluster_col].unique().to_list(),
-            exp_profiles[cluster_col].unique().to_list(),
-        )
+    # generate all the possible combinations of treatment, ref_cluster, and exp_cluster lazily
+    treatment_cluster_combinations = itertools.product(
+        exp_profiles[treatment_col].unique().to_list(),
+        ref_profile[cluster_col].unique().to_list(),
+        exp_profiles[cluster_col].unique().to_list()
     )
 
-    # iterate over cluster combinations and apply distance metric
+    # iterate over treatment-cluster combinations and apply distance metric
     dist_scores = []
-    for treatment in exp_profiles[treatment_col].unique().to_list():
-        for ref_cluster, exp_cluster in cluster_combinations:
-            # filter single-cells based on selected cluster
-            ref_cluster_population_df = ref_profile.filter(
-                pl.col(cluster_col).is_in([ref_cluster])
+    for treatment, ref_cluster, exp_cluster in treatment_cluster_combinations:
+        # filter single-cells based on selected cluster
+        ref_cluster_population_df = ref_profile.filter(
+            pl.col(cluster_col).is_in([ref_cluster])
+        )
+
+        # filter single-cells based on treatment and selected cluster
+        exp_cluster_population_df = exp_profiles.filter(
+            (pl.col(treatment_col).is_in([treatment])) & (pl.col(cluster_col).is_in([exp_cluster]))
+        )
+
+        # calculate distances between on and profiles
+        if method == "emd":
+            on_dist, off_dist = compute_earth_movers_distance(
+                ref_cluster_population_df,
+                exp_cluster_population_df,
+                on_signature,
+                off_signature,
+                distance_metric=emd_dist_matrix_method,
             )
 
-            # filter single-cells based on treatment and selected cluster
-            exp_cluster_population_df = exp_profiles.filter(
-                pl.col(treatment_col).is_in([treatment])
-            ).filter(pl.col(cluster_col).is_in([exp_cluster]))
-
-            # calculate distances between on and off
-            if method == "emd":
-                on_dist, off_dist = earths_movers_distance(
-                    ref_cluster_population_df,
-                    exp_cluster_population_df,
-                    on_signature,
-                    off_signature,
-                    distance_metric=emd_dist_matrix_method,
-                )
-            else:
-                raise ValueError(f"Unknown method: {method}")
-
-            # append the results
-            dist_scores.append(
-                {
-                    "ref_cluster": ref_cluster,
-                    "treatment": treatment,
-                    "exp_cluster": exp_cluster,
-                    "on_dist": on_dist,
-                    "off_dist": off_dist,
-                }
-            )
+        # append the results
+        dist_scores.append(
+            {
+                "ref_cluster": ref_cluster,
+                "treatment": treatment,
+                "exp_cluster": exp_cluster,
+                "on_dist": on_dist,
+                "off_dist": off_dist,
+            }
+        )
 
     # convert the results to a DataFrame
-    dist_scores_df = pl.DataFrame(dist_scores)
-    return dist_scores_df
+    return pl.DataFrame(dist_scores)
