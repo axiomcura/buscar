@@ -1,0 +1,16 @@
+name: r-analysis
+channels:
+  - conda-forge
+  - r
+dependencies:
+  - r-base>=4.0
+  - r-essentials
+  - r-tidyverse
+  - r-ggplot2
+  - r-dplyr
+  - r-readr
+  - r-stringr
+  - r-lubridate
+  - jupyter
+  - r-irkernel
+  - r-arrow
