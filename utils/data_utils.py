@@ -6,12 +6,17 @@ as well as for saving, loading, and writing files.
 """
 
 from collections import defaultdict
+from typing import Literal
 
+import narwhals as nw
 import pandas as pd
 import polars as pl
+import umap
+from beartype import beartype
 from pycytominer.cyto_utils import infer_cp_features
 
 
+@beartype
 def _sort_features_by_compartment_organelles(
     features: list[str],
     compartment_pos: int = 0,
@@ -78,6 +83,7 @@ def _sort_features_by_compartment_organelles(
     return compartment_organelle_dict
 
 
+@beartype
 def _generate_organelle_counts(compartment_organelle_dict: dict) -> dict:
     """Generate a count of organelles per compartment for each gene.
 
@@ -131,68 +137,127 @@ def _generate_organelle_counts(compartment_organelle_dict: dict) -> dict:
     return feature_count_per_organelle
 
 
-def split_meta_and_features(
-    profile: pd.DataFrame | pl.DataFrame,
-    compartments: list[str] = ["Nuclei", "Cells", "Cytoplasm"],
-    metadata_tag: bool | None = False,
+# @beartype
+# def split_meta_and_features(
+#     profile: pd.DataFrame | pl.DataFrame,
+#     compartments: list[str] = ["Nuclei", "Cells", "Cytoplasm"],
+#     metadata_tag: bool | None = False,
+# ) -> tuple[list[str], list[str]]:
+#     """Splits metadata and feature column names
+
+#     This function takes a DataFrame containing image-based profiles and splits
+#     the column names into metadata and feature columns. It uses the Pycytominer's
+#     `infer_cp_features` function to identify feature columns based on the specified compartments.
+#     If the `metadata_tag` is set to False, it assumes that metadata columns do not have a specific tag
+#     and identifies them by excluding feature columns. If `metadata_tag` is True, it uses
+#     the `infer_cp_features` function with the `metadata` argument set to True.
+
+
+#     Parameters
+#     ----------
+#     profile : pd.DataFrame | pl.DataFrame
+#         Dataframe containing image-based profile
+#     compartments : list, optional
+#         compartments used to generated image-based profiles, by default
+#         ["Nuclei", "Cells", "Cytoplasm"]
+#     metadata_tag : Optional[bool], optional
+#         indicating if the profiles have metadata columns tagged with 'Metadata_'
+#         , by default False
+
+#     Returns
+#     -------
+#     tuple[List[str], List[str]]
+#         Tuple containing metadata and feature column names
+
+#     Notes
+#     -----
+#     - If a polars DataFrame is provided, it will be converted to a pandas DataFrame in order
+#     to maintain compatibility with the `infer_cp_features` function.
+#     """
+
+#     # type checking
+#     if not isinstance(profile, (pd.DataFrame, pl.DataFrame)):
+#         raise TypeError("profile must be a pandas or polars DataFrame")
+#     if isinstance(profile, pl.DataFrame):
+#         # convert Polars DataFrame to Pandas DataFrame for compatibility
+#         profile = profile.to_pandas()
+#     if not isinstance(compartments, list):
+#         raise TypeError("compartments must be a list of strings")
+
+#     # identify features names
+#     features_cols = infer_cp_features(profile, compartments=compartments)
+
+#     # iteratively search metadata features and retain order if the Metadata tag is not added
+#     if metadata_tag is False:
+#         meta_cols = [
+#             colname
+#             for colname in profile.columns.tolist()
+#             if colname not in features_cols
+#         ]
+#     else:
+#         meta_cols = infer_cp_features(profile, metadata=metadata_tag)
+
+#     return (meta_cols, features_cols)
+
+
+@beartype
+def split_meta_and_morphology_feats(
+    profiles: pd.DataFrame | pl.DataFrame,
+    compartments: list = ["Cells", "Nuclei", "Cytoplasm"],
 ) -> tuple[list[str], list[str]]:
-    """Splits metadata and feature column names
+    """
+    Splits the features into metadata and morphology features based on compartment names.
 
-    This function takes a DataFrame containing image-based profiles and splits
-    the column names into metadata and feature columns. It uses the Pycytominer's
-    `infer_cp_features` function to identify feature columns based on the specified compartments.
-    If the `metadata_tag` is set to False, it assumes that metadata columns do not have a specific tag
-    and identifies them by excluding feature columns. If `metadata_tag` is True, it uses
-    the `infer_cp_features` function with the `metadata` argument set to True.
+    First attempts to use pycytominer's infer_cp_features to automatically detect
+    CellProfiler features. If that fails, falls back to compartment-based splitting.
 
+    Parameters:
+    -----------
+    profiles : pd.DataFrame | pl.DataFrame
+        DataFrame containing both metadata and morphology features
+    compartments : list, default=["Cells", "Nuclei", "Cytoplasm"]
+        List of compartment names to identify morphology features
+    positional_landmark : Optional[int]
+        Deprecated parameter, kept for compatibility
 
-    Parameters
-    ----------
-    profile : pd.DataFrame | pl.DataFrame
-        Dataframe containing image-based profile
-    compartments : list, optional
-        compartments used to generated image-based profiles, by default
-        ["Nuclei", "Cells", "Cytoplasm"]
-    metadata_tag : Optional[bool], optional
-        indicating if the profiles have metadata columns tagged with 'Metadata_'
-        , by default False
+    Returns:
+    --------
+    tuple[list[str], list[str]]
+        Tuple of (metadata_columns, morphology_columns)
 
-    Returns
+    Raises:
     -------
-    tuple[List[str], List[str]]
-        Tuple containing metadata and feature column names
-
-    Notes
-    -----
-    - If a polars DataFrame is provided, it will be converted to a pandas DataFrame in order
-    to maintain compatibility with the `infer_cp_features` function.
+    ValueError
+        If profiles is not a pandas or polars DataFrame
     """
 
-    # type checking
-    if not isinstance(profile, (pd.DataFrame, pl.DataFrame)):
-        raise TypeError("profile must be a pandas or polars DataFrame")
-    if isinstance(profile, pl.DataFrame):
-        # convert Polars DataFrame to Pandas DataFrame for compatibility
-        profile = profile.to_pandas()
-    if not isinstance(compartments, list):
-        raise TypeError("compartments must be a list of strings")
+    if not isinstance(profiles, (pd.DataFrame, pl.DataFrame)):
+        raise ValueError("Profiles must be a pandas or polars DataFrame.")
 
-    # identify features names
-    features_cols = infer_cp_features(profile, compartments=compartments)
+    # Convert polars DataFrame to narwhals for compatibility with pycytominer
+    profiles_nw = nw.from_native(profiles)
+    all_columns = list(profiles_nw.columns)
 
-    # iteratively search metadata features and retain order if the Metadata tag is not added
-    if metadata_tag is False:
-        meta_cols = [
-            colname
-            for colname in profile.columns.tolist()
-            if colname not in features_cols
+    # First attempt: use pycytominer's automatic feature detection
+    try:
+        morph_cols = infer_cp_features(
+            profiles_nw.to_pandas(), compartments=compartments
+        )
+        metadata_cols = [col for col in all_columns if col not in morph_cols]
+        return metadata_cols, morph_cols
+    except (ValueError, Exception):
+        # Fallback: identify morphology columns by compartment prefixes
+        # this indicates that the profiles generated is not from CellProfiler
+        morph_cols = [
+            col
+            for col in all_columns
+            if any(col.startswith(comp) for comp in compartments)
         ]
-    else:
-        meta_cols = infer_cp_features(profile, metadata=metadata_tag)
-
-    return (meta_cols, features_cols)
+        metadata_cols = [col for col in all_columns if col not in morph_cols]
+        return metadata_cols, morph_cols
 
 
+@beartype
 def group_signature_by_compartment(signatures: dict, compartment_pos: int = 0):
     """Group gene features in each signature by their compartment.
 
@@ -245,6 +310,7 @@ def group_signature_by_compartment(signatures: dict, compartment_pos: int = 0):
     return gene_signature_grouped_by_compartment
 
 
+@beartype
 def group_features_by_compartment_organelle(
     signatures: dict,
     compartments: list[str] = ["Nuclei", "Cytoplasm", "Cells"],
@@ -330,6 +396,7 @@ def group_features_by_compartment_organelle(
     return sorted_compartment_and_organelle_per_gene
 
 
+@beartype
 def organelle_count_table_per_gene(
     sorted_signatures: dict, stratify_by_compartment: bool = False
 ) -> pd.DataFrame:
@@ -427,6 +494,7 @@ def organelle_count_table_per_gene(
     return organelle_counted_per_gene
 
 
+@beartype
 def generate_consensus_signatures(
     signatures_dict, features: list[str], min_consensus_threshold=0.5
 ) -> dict:
@@ -532,3 +600,154 @@ def generate_consensus_signatures(
         }
 
     return consensus_signatures
+
+
+@beartype
+def handle_nans(
+    profiles: pl.DataFrame,
+    meta_feats: list[str],
+    morph_feats: list[str],
+    method: Literal["drop", "mean", "median", "zeros"] = "drop",
+) -> pl.DataFrame:
+    """Handle NaN values in the profiles DataFrame based on morphology features.
+
+    Parameters
+    ----------
+    profiles : pl.DataFrame
+        DataFrame containing single-cell profiles
+    meta_feats : list[str]
+        List of metadata feature column names (preserved during processing)
+    morph_feats : list[str]
+        List of morphology feature column names (used for NaN detection/imputation)
+    method : {"drop", "mean", "median", "zeros"}, default="drop"
+        Method to handle NaN values:
+        - "drop": Remove rows with any NaN values in morphology columns
+        - "mean": Impute NaNs in morphology columns with column means
+        - "median": Impute NaNs in morphology columns with column medians
+        - "zeros": Replace NaNs in morphology columns with zeros
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with NaN values handled (entire DataFrame returned with metadata intact)
+    """
+    if method == "drop":
+        return profiles.filter(~pl.any_horizontal(pl.col(morph_feats).is_null()))
+
+    elif method == "mean":
+        return profiles.with_columns(
+            pl.col(morph_feats).fill_null(pl.col(morph_feats).mean())
+        )
+
+    elif method == "median":
+        return profiles.with_columns(
+            pl.col(morph_feats).fill_null(pl.col(morph_feats).median())
+        )
+
+    elif method == "zeros":
+        return profiles.with_columns(pl.col(morph_feats).fill_null(0))
+
+    else:
+        raise ValueError(
+            f"Invalid method '{method}'. Choose from 'drop', 'mean', 'median', 'zeros'."
+        )
+
+
+@beartype
+def generate_umap(
+    profiles: pl.DataFrame,
+    meta_features: list[str],
+    morphology_features: list[str],
+    n_neighbors: int = 15,
+    min_dist: float = 0.1,
+    n_components: int = 2,
+    random_state: int = 0,
+    metric: str = "cosine",
+    low_memory: bool = True,
+    df_output_type: Literal["polars", "pandas"] = "polars",
+    nan_handling: Literal["drop", "mean", "median", "zeros"] = None,
+) -> pl.DataFrame | pd.DataFrame:
+    """Generate UMAP embedding for single-cell image-based profiles.
+
+    Parameters
+    ----------
+    profiles : pl.DataFrame
+        DataFrame containing single-cell profiles
+    meta_features : list[str]
+        List of metadata feature column names
+    morphology_features : list[str]
+        List of morphology feature column names
+    n_neighbors : int, default=15
+        Number of neighbors for UMAP
+    min_dist : float, default=0.1
+        Minimum distance for UMAP
+    n_components : int, default=2
+        Number of UMAP components
+    random_state : int, default=0
+        Random state for reproducibility
+    metric : str, default="cosine"
+        Distance metric for UMAP
+    low_memory : bool, default=True
+        Whether to use low memory mode
+    df_output_type : {"polars", "pandas"}, default="polars"
+        Output dataframe type
+    nan_handling : {"drop", "mean", "median", "zeros"}, default=None
+        Method to handle NaN values in morphology features
+
+    Returns
+    -------
+    pl.DataFrame or pd.DataFrame
+        DataFrame with metadata and UMAP components
+    """
+
+    # check if there are nans in the morphology features; if so raise error if nan_handling is None
+    morph_nan_count = (
+        profiles.select(morphology_features).null_count().sum_horizontal().sum()
+    )
+    if morph_nan_count > 0:
+        if nan_handling is None:
+            raise ValueError(
+                "NaN values found in morphology features. Please specify a method to handle NaNs using the 'nan_handling' parameter."
+            )
+        profiles = handle_nans(
+            profiles,
+            meta_feats=meta_features,
+            morph_feats=morphology_features,
+            method=nan_handling,
+        )
+
+    # create umap model
+    model = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=n_components,
+        random_state=random_state,
+        metric=metric,
+        low_memory=low_memory,
+    )
+
+    # fit and transform
+    components = model.fit_transform(profiles[morphology_features].to_numpy())
+
+    # create dataframe of the metadata (only if meta_features is not empty)
+    if meta_features:
+        metadata_df = profiles[meta_features]
+    else:
+        metadata_df = pl.DataFrame()
+
+    # merge components ndarray to metadata df
+    components_df = pl.DataFrame(
+        components, schema=[f"UMAP_{i + 1}" for i in range(n_components)]
+    )
+
+    # concatenate metadata and components
+    if meta_features:
+        result_df = pl.concat([metadata_df, components_df], how="horizontal")
+    else:
+        result_df = components_df
+
+    # convert to pandas if requested
+    if df_output_type == "pandas":
+        result_df = result_df.to_pandas()
+
+    return result_df
