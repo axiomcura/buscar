@@ -505,16 +505,25 @@ def generate_consensus_signatures(
 
             # Determine minimum count threshold
             total_lists = len(feature_lists)
-            min_count = total_lists if min_consensus_threshold == 1.0 else max(1, int(total_lists * min_consensus_threshold))
+            min_count = (
+                total_lists
+                if min_consensus_threshold == 1.0
+                else max(1, int(total_lists * min_consensus_threshold))
+            )
 
             # Select features meeting threshold
-            consensus_on_features = sorted([
-                feature for feature, count in feature_counts.items()
-                if count >= min_count
-            ])
+            consensus_on_features = sorted(
+                [
+                    feature
+                    for feature, count in feature_counts.items()
+                    if count >= min_count
+                ]
+            )
 
         # Generate off-features as complement of on-features
-        consensus_off_features = sorted(list(full_features_set - set(consensus_on_features)))
+        consensus_off_features = sorted(
+            list(full_features_set - set(consensus_on_features))
+        )
 
         # Store results
         consensus_signatures[gene] = {

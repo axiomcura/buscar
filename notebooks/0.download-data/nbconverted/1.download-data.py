@@ -8,7 +8,7 @@
 # 2. **MitoCheck Dataset**: Normalized and feature-selected single-cell profiles are downloaded for further analysis.
 # 3. **CFReT Dataset**: Normalized and feature-selected single-cell profiles from the CFReT plate are downloaded for downstream analysis.
 
-# In[ ]:
+# In[1]:
 
 
 import pathlib
@@ -31,11 +31,13 @@ from utils import io_utils
 # In[ ]:
 
 
-
 def download_compressed_file(
-    source_url: str, output_path: pathlib.Path | str, chunk_size: int = 8192, extract: bool = True
+    source_url: str,
+    output_path: pathlib.Path | str,
+    chunk_size: int = 8192,
+    extract: bool = True,
 ):
-    """ Downloads a compressed file from a URL with progress tracking.
+    """Downloads a compressed file from a URL with progress tracking.
 
     Downloads a file from the specified URL and saves it to the given output path.
     The download is performed in chunks to handle large files efficiently, and the progress is displayed using
@@ -108,30 +110,29 @@ def download_compressed_file(
 
         # extract the file if requested
         if extract:
-
             # ensring that the path is a directory if the output path is a file
             # this is necessary for extraction
             extract_dir = output_path
             if extract_dir.is_file():
                 extract_dir = output_path.parent
 
-            if output_path.suffix == '.gz':
+            if output_path.suffix == ".gz":
                 # handle gzip files
-                extracted_path = output_path.with_suffix('')
-                with gzip.open(output_path, 'rb') as f_in:
-                    with open(extracted_path, 'wb') as f_out:
+                extracted_path = output_path.with_suffix("")
+                with gzip.open(output_path, "rb") as f_in:
+                    with open(extracted_path, "wb") as f_out:
                         f_out.write(f_in.read())
                 print(f"Extracted to: {extracted_path}")
 
-            elif output_path.suffix == '.zip':
+            elif output_path.suffix == ".zip":
                 # handle zip files
-                with zipfile.ZipFile(output_path, 'r') as zip_ref:
+                with zipfile.ZipFile(output_path, "r") as zip_ref:
                     zip_ref.extractall(extract_dir)
                 print(f"Extracted to: {extract_dir}")
 
-            elif output_path.suffix in ['.tar', '.tgz'] or '.tar.' in output_path.name:
+            elif output_path.suffix in [".tar", ".tgz"] or ".tar." in output_path.name:
                 # handle tar files
-                with tarfile.open(output_path, 'r:*') as tar_ref:
+                with tarfile.open(output_path, "r:*") as tar_ref:
                     tar_ref.extractall(extract_dir)
                 print(f"Extracted to: {extract_dir}")
 
@@ -146,7 +147,7 @@ def download_compressed_file(
 
 # Parameters used in this notebook
 
-# In[ ]:
+# In[3]:
 
 
 # setting perturbation type
@@ -156,7 +157,7 @@ pert_type = "crispr"
 
 # setting input and output paths
 
-# In[ ]:
+# In[4]:
 
 
 # setting config path
@@ -186,7 +187,7 @@ cfret_dir.mkdir(exist_ok=True)
 #
 # In this section, we download and process the CPJUMP1 experimental metadata. This metadata contains information about assay plates, batches, and perturbation types, which is essential for organizing and analyzing single-cell profiles. Only plates treated with CRISPR perturbations are selected for downstream analysis.
 
-# In[ ]:
+# In[5]:
 
 
 # loading config file and setting experimental metadata URL
@@ -213,7 +214,7 @@ exp_metadata
 #
 # This step organizes the plate barcodes from the experimental metadata into groups based on their batch. Grouping plates by batch is useful for batch-wise data processing and downstream analyses.
 
-# In[ ]:
+# In[6]:
 
 
 # creating a dictionary for the batch and the associated plates with the a batch
@@ -235,7 +236,7 @@ pprint.pprint(batch_plates_dict)
 #
 # Specifically, we are downloading data that has already been normalized and feature-selected. The normalization and feature selection pipeline is available [here](https://github.com/WayScience/mitocheck_data/tree/main/3.normalize_data).
 
-# In[ ]:
+# In[7]:
 
 
 # url source for the MitoCheck data
@@ -263,14 +264,16 @@ else:
 # - Only the processed single-cell profiles are downloaded [here](https://github.com/WayScience/cellpainting_predicts_cardiac_fibrosis/tree/main/3.process_cfret_features/data/single_cell_profiles)
 # - The CFReT dataset was used and published in [this study](https://doi.org/10.1161/CIRCULATIONAHA.124.071956).
 
-# In[ ]:
+# In[8]:
 
 
 # setting the source for the CFReT data
 cfret_source = nb_configs["links"]["CFReT-profiles-source"]
 
 # use the correct filename from the source URL
-output_path = (cfret_dir / "localhost230405150001_sc_feature_selected.parquet").resolve()
+output_path = (
+    cfret_dir / "localhost230405150001_sc_feature_selected.parquet"
+).resolve()
 
 # checking if the download already exists if it does not exist
 # download the file
