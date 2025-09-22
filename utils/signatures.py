@@ -2,7 +2,7 @@
 This module provides statistical tests to identify significant differences in
 morphology features between two profiles (reference and experimental). It supports
 Mann-Whitney U test, Welch’s t-test, Kolmogorov–Smirnov test, and permutation test,
-using scipy and statsmodels.  The core function, get_signatures, compares the two
+using scipy and statsmodels. The core function, get_signatures, compares the two
 profiles using a specified test and a list of morphology features.
 
 It returns two lists of features: significant (on-morphology) and non-significant
