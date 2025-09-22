@@ -253,17 +253,22 @@ def get_signatures(
     test_method: Literal["ks_test", "permutation_test", "welchs_ttest"] = "ks_test",
     fdr_method: str = "fdr_bh",
     p_threshold: float | None = 0.05,
+    p_value_padding: float = 0.0,
     permutation_resamples: int | None = 1000,
     permutation_statistic: Literal["mean", "median"] = "mean",
     seed: int | None = 0,
-) -> tuple[list[str], list[str]]:
-    """Identifies significant and non-significant features between two profiles.
+) -> tuple[list[str], list[str], list[str]]:
+    """Identifies significant, non-significant, and ambiguous features between two
+    profiles.
 
-    This function performs statistical tests to compare two profiles (reference and experimental)
-    based on specified morphology features. It identifies significant features using the
-    Kolmogorov-Smirnov (KS) test or other specified methods. The function applies p-value
-    correction and labels features as significant or non-significant based on a given
-    significance threshold.
+    This function compares cellular morphology profiles using one of the statistical
+    methods, applies multiple testing correction, and categorizes features based on
+    their statistical significance. Features are classified into three groups: those
+    clearly associated with the cell state (significant), those are not
+    associated (non-significant), and those with uncertain significance (ambiguous).
+    Ambiguous features have corrected p-values within a buffer zone around the
+    significance threshold, defined by p_threshold ± p_value_padding, indicating
+    uncertain statistical evidence for their association with the cell state.
 
     Parameters
     ----------
@@ -279,16 +284,23 @@ def get_signatures(
         Method for p-value correction. Default is "fdr_bh".
     p_threshold : float | None, optional
         Significance threshold for p-values. Default is 0.05.
+    p_value_padding : float, optional
+        Padding around the p-value threshold to create a buffer zone. Default is 0.0.
     permutation_resamples : int | None, optional
         Number of resamples for permutation test. Default is 1000.
+    permutation_statistic : Literal["mean", "median"], optional
+        Statistic to use for permutation test. Default is "mean".
     seed : int | None, optional
         Random seed for reproducibility. Default is 0.
+
     Returns
     -------
-    tuple
-        A tuple containing two lists:
+    tuple[list[str], list[str], list[str]]
+        A tuple containing three lists:
         - Significant features (on-morphology).
         - Non-significant features (off-morphology).
+        - Ambiguous features (features with p-values in the buffer zone around the
+        threshold).
 
     Raises
     ------
@@ -326,12 +338,29 @@ def get_signatures(
     pvals_df = pvals_df.with_columns(pl.Series("corrected_p_value", corrected_pvals))
 
     # Determine significance using p_threshold
+    # Create a buffer zone around the p-value threshold
+    # Label features as significant, non-significant, or ambiguous based on the buffer
+    # zone
     pvals_df = pvals_df.with_columns(
-        (pl.col("corrected_p_value") < p_threshold).alias("is_significant")
+        pl.when(pl.col("corrected_p_value") < (p_threshold - p_value_padding))
+        .then(pl.lit("significant"))
+        .when(pl.col("corrected_p_value") > (p_threshold + p_value_padding))
+        .then(pl.lit("non_significant"))
+        .otherwise(pl.lit("ambiguous"))
+        .alias("significance_category")
+    ).with_columns(
+        (pl.col("significance_category") == "significant").alias("is_significant")
     )
 
-    # returns significant and non-significant features as lists
+    # returns significant, non-significant, and variant features as lists
     return (
-        pvals_df.filter(pl.col("is_significant"))["features"].to_list(),
-        pvals_df.filter(~pl.col("is_significant"))["features"].to_list(),
+        pvals_df.filter(pl.col("significance_category") == "significant")[
+            "features"
+        ].to_list(),
+        pvals_df.filter(pl.col("significance_category") == "non_significant")[
+            "features"
+        ].to_list(),
+        pvals_df.filter(pl.col("significance_category") == "ambiguous")[
+            "features"
+        ].to_list(),
     )
