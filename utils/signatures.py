@@ -90,13 +90,13 @@ def apply_welchs_ttest(
     exp_profiles: pl.DataFrame,
     morph_feats: list[str],
 ) -> pl.DataFrame:
-    """Perform Welch's t-test for each feature in the provided profiles and return a
-    DataFrame with p-values.
+    """Perform Welch's t-test for each feature in the provided profiles and
+    return a DataFrame with p-values.
 
-    Welch's t-test is a statistical method that compares the average values of a feature
-    between two groups to determine if they are significantly different. Unlike other
-    t-tests, Welch's version is more flexible because it doesn't assume that both groups
-    have the same amount of variation (variance).
+    Welch's t-test is a statistical method that compares the average values of a
+    feature between two groups to determine if they are significantly different.
+    Unlike other t-tests, Welch's version is more flexible because it doesn't
+    assume that both groups have the same amount of variation (variance).
 
     How it works:
     1. Calculates the average value for each feature in both groups
@@ -165,12 +165,14 @@ def apply_perm_test(
     statistic: Literal["mean", "median"] = "mean",
     seed: int | None = 0,
 ) -> pl.DataFrame:
-    """Perform a permutation test for each morphological feature in image-based profiles
-    and identifies significant differences between experimental conditions.
+    """Perform a permutation test for each morphological feature in image-based
+    profiles and identifies significant differences between experimental
+    conditions.
 
-    A permutation test is a non-parametric statistical method that determines if observed
-    differences in cellular morphology between two conditions are statistically significant
-    by comparing them to what would be expected by random chance alone.
+    A permutation test is a non-parametric statistical method that determines
+    if observed differences in cellular morphology between two conditions are
+    statistically significant by comparing them to what would be expected by
+    random chance alone.
 
     In the context of image-based profiling:
     1. Calculates the actual difference in morphological features (mean or median)
@@ -360,13 +362,14 @@ def get_signatures(
     significance threshold, defined by p_threshold ± p_value_padding, indicating
     uncertain statistical evidence for their association with the cell state.
 
-    Note
-    ----
-    P-value correction for multiple testing is always applied to the results, regardless of the test method chosen,
-    using the method specified by the `fdr_method` parameter.
+    P-value correction for multiple testing is always applied to the results,
+    regardless of the test method chosen, using the method specified by the
+    `fdr_method` parameter.
 
-    The function applies p-value correction and labels features as significant or non-significant based on a given
-    significance threshold.
+    The function applies p-value correction and labels features as significant
+    or non-significant based on a given significance threshold.
+
+    Parameters
     ----------
     ref_profiles : pl.DataFrame
         Reference profile as a Polars DataFrame.
