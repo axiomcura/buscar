@@ -37,8 +37,8 @@ repos:
         args: ["--profile", "black"]
 
   # Ruff for linting and formatting Python files
--   repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.13.1
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.2
     hooks:
     -   id: ruff-check
         args: ["--fix"]
