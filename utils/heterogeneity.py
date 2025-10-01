@@ -109,8 +109,6 @@ def cluster_profiles(
     dim_reduction : Literal["PCA", "raw"], default "PCA"
         Dimensionality reduction method: "PCA" for PCA->UMAP pipeline, "raw" for direct
         use of raw data.
-    umap_n_components : int, default 15
-        Number of components for UMAP embedding (only used if dim_reduction="PCA").
     n_neighbors : int, default 15
         Maximum number of neighbors for neighbor graph construction.
     neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default
@@ -129,7 +127,7 @@ def cluster_profiles(
 
     Returns
     -------
-    pd.DataFrame
+    pl.DataFrame
         Original profiles DataFrame with an additional column "Metadata_cluster_id"
         containing cluster labels as categorical values, prefixed by treatment
         (e.g., "treatment_0").
@@ -245,9 +243,8 @@ def cluster_profiles(
 
     # Add total cells per treatment
     result_df = result_df.with_columns(
-        pl.count().over("Metadata_treatment").alias("Metadata_treatment_n_cells")
+        pl.count().over(treatment_col).alias("Metadata_treatment_n_cells")
     )
-
     # Calculate the ratio as a percentage
     result_df = result_df.with_columns(
         (
@@ -321,7 +318,7 @@ def optimized_clustering(
 
     # generate the objective function for Optuna
     # this function will be called by Optuna to evaluate each set of parameters
-    def objective(trial):
+    def objective(trial: optuna.Trial):
         """Optuna objective function to maximize silhouette score."""
         # Sample parameters from the parameter grid
         params = {}
@@ -395,7 +392,8 @@ def optimized_clustering(
                 # If no valid scores, return a very low score to penalize this configuration
                 return -1.0
 
-        except Exception:
+        except Exception as e:
+            print(f"Exception in Optuna objective: {e}")
             return -1.0
 
     # Create Optuna study
