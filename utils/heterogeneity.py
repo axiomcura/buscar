@@ -14,6 +14,45 @@ from beartype import beartype
 from sklearn.metrics import silhouette_score
 
 
+def _validate_param_grid(param_grid: dict[str, Any]) -> None:
+    """Validate the parameter grid for optimized_clustering function.
+
+    This function checks that the provided param_grid contains valid parameter names
+    and types for the cluster_profiles function. It raises a ValueError if any invalid
+    parameters are found.
+
+    Parameters
+    ----------
+    param_grid : Dict[str, Any]
+        Dictionary defining the parameter search space. Each key should be a parameter
+        name from cluster_profiles, and each value should be a dictionary with 'type'
+        and range info.
+
+    Raises
+    ------
+    ValueError
+        If param_grid contains unsupported parameter types or invalid parameter names.
+    """
+
+    valid_params = {
+        "cluster_method",
+        "cluster_resolution",
+        "dim_reduction",
+        "n_neighbors",
+        "neighbor_distance_metric",
+        "pca_variance_explained",
+        "pca_n_components_to_capture_variance",
+        "pca_svd_solver",
+    }
+
+    for param_name in param_grid.keys():
+        if param_name not in valid_params:
+            raise ValueError(
+                f"Invalid parameter name: {param_name}. "
+                f"Valid parameters are: {valid_params}"
+            )
+
+
 @beartype
 def cluster_profiles(
     profiles: pl.DataFrame,
@@ -278,23 +317,7 @@ def optimized_clustering(
     """
 
     # first check if the param_grid is valid and contains valid parameter names
-    valid_params = {
-        "cluster_method",
-        "cluster_resolution",
-        "dim_reduction",
-        "n_neighbors",
-        "neighbor_distance_metric",
-        "pca_variance_explained",
-        "pca_n_components_to_capture_variance",
-        "pca_svd_solver",
-    }
-
-    for param_name in param_grid.keys():
-        if param_name not in valid_params:
-            raise ValueError(
-                f"Invalid parameter name: {param_name}. "
-                f"Valid parameters are: {valid_params}"
-            )
+    _validate_param_grid(param_grid)
 
     # generate the objective function for Optuna
     # this function will be called by Optuna to evaluate each set of parameters
