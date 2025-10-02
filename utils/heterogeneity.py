@@ -3,12 +3,54 @@ Functions for assessing cellular heterogeneity via clustering, including Optuna-
 parameter optimization to maximize silhouette score. Uses scanpy for dimensionality
 reduction and clustering (Louvain/Leiden), performed per treatment group.
 """
-from typing import Literal
+
+from typing import Any, Literal
 
 import numpy as np
+import optuna
 import polars as pl
 import scanpy as sc
 from beartype import beartype
+from sklearn.metrics import silhouette_score
+
+
+def _validate_param_grid(param_grid: dict[str, Any]) -> None:
+    """Validate the parameter grid for optimized_clustering function.
+
+    This function checks that the provided param_grid contains valid parameter names
+    and types for the cluster_profiles function. It raises a ValueError if any invalid
+    parameters are found.
+
+    Parameters
+    ----------
+    param_grid : Dict[str, Any]
+        Dictionary defining the parameter search space. Each key should be a parameter
+        name from cluster_profiles, and each value should be a dictionary with 'type'
+        and range info.
+
+    Raises
+    ------
+    ValueError
+        If param_grid contains unsupported parameter types or invalid parameter names.
+    """
+
+    valid_params = {
+        "cluster_method",
+        "cluster_resolution",
+        "dim_reduction",
+        "n_neighbors",
+        "neighbor_distance_metric",
+        "pca_variance_explained",
+        "pca_n_components_to_capture_variance",
+        "pca_svd_solver",
+    }
+
+    for param_name in param_grid.keys():
+        if param_name not in valid_params:
+            raise ValueError(
+                f"Invalid parameter name: {param_name}. "
+                f"Valid parameters are: {valid_params}"
+            )
 
 
 @beartype
@@ -16,7 +58,7 @@ def cluster_profiles(
     profiles: pl.DataFrame,
     meta_features: list[str] | pl.Series,
     morph_features: list[str] | pl.Series,
-    treatment_col: str, 
+    treatment_col: str,
     cluster_method: Literal["louvain", "leiden"] = "leiden",
     cluster_resolution: float = 1.0,
     dim_reduction: Literal["PCA", "raw"] = "PCA",
@@ -40,34 +82,37 @@ def cluster_profiles(
 
     Pipeline for dim_reduction="PCA":
     1. Run PCA with up to 100 components (or fewer based on data constraints).
-    2. Determine the number of PCs that explain at least pca_variance_explained of the variance.
+    2. Determine the number of PCs that explain at least pca_variance_explained of the
+    variance.
     4. Compute neighbors in PCA space.
     5. Apply clustering (Louvain or Leiden) in UMAP space per treatment group.
 
-    For dim_reduction="raw", neighbors are computed directly on raw data, and clustering is applied
-    per treatment group.
+    For dim_reduction="raw", neighbors are computed directly on raw data, and clustering
+    is applied per treatment group.
 
     Parameters
     ----------
     profiles : pl.DataFrame
         DataFrame containing single-cell profiles with morphological features and metadata.
     meta_features : list[str] | pl.Series
-        List or Series of column names used to group profiles into treatment groups for per-group clustering.
+        List or Series of column names used to group profiles into treatment groups for
+        per-group clustering.
     morph_features : list[str] | pl.Series
-        List or Series of column names representing morphological features to use for clustering.
-    treatment_col : str, default 
+        List or Series of column names representing morphological features to use for
+        clustering.
+    treatment_col : str, default
         Column name in profiles indicating treatment (used for labeling clusters).
     cluster_method : Literal["louvain", "leiden"], default "louvain"
         Clustering algorithm to use: "louvain" or "leiden".
     cluster_resolution : float, default 1.0
         Resolution parameter for clustering (higher values lead to more clusters).
     dim_reduction : Literal["PCA", "raw"], default "PCA"
-        Dimensionality reduction method: "PCA" for PCA->UMAP pipeline, "raw" for direct use of raw data.
-    umap_n_components : int, default 15
-        Number of components for UMAP embedding (only used if dim_reduction="PCA").
+        Dimensionality reduction method: "PCA" for PCA->UMAP pipeline, "raw" for direct
+        use of raw data.
     n_neighbors : int, default 15
         Maximum number of neighbors for neighbor graph construction.
-    neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default "euclidean"
+    neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default
+    "euclidean"
         Distance metric to use when constructing the neighbor graph.
         - For PCA or UMAP-reduced spaces, "euclidean" or "manhattan" are recommended.
         - For clustering directly on raw feature space, "cosine" is often preferred.
@@ -82,9 +127,10 @@ def cluster_profiles(
 
     Returns
     -------
-    pd.DataFrame
-        Original profiles DataFrame with an additional column "Metadata_cluster_id" containing
-        cluster labels as categorical values, prefixed by treatment (e.g., "treatment_0").
+    pl.DataFrame
+        Original profiles DataFrame with an additional column "Metadata_cluster_id"
+        containing cluster labels as categorical values, prefixed by treatment
+        (e.g., "treatment_0").
 
     Raises
     ------
@@ -97,9 +143,12 @@ def cluster_profiles(
         raise ValueError("pca_variance_explained must be between 0 and 1")
 
     # 1. Convert to AnnData and add treatment info to .obs
+    obs_df = profiles.select(meta_features).to_pandas()
+    obs_df.index = obs_df.index.astype(str)
+
     adata = sc.AnnData(
         X=profiles.select(morph_features).to_numpy(),
-        obs=profiles.select(meta_features).to_pandas(),
+        obs=obs_df,
     )
 
     # Ensure the treatment column is categorical
@@ -168,8 +217,8 @@ def cluster_profiles(
             cluster_key = f"leiden_{treatment}"
 
         for _, idx in enumerate(treatment_indices):
-            # Get the cluster label for this cell
-            cluster_label = adata.obs[cluster_key][idx]
+            # Get the cluster label for this cell using iloc
+            cluster_label = adata.obs[cluster_key].iloc[idx]
 
             # Extract cluster id if label is a tuple or string with comma
             if isinstance(cluster_label, (tuple, list)):
@@ -194,9 +243,8 @@ def cluster_profiles(
 
     # Add total cells per treatment
     result_df = result_df.with_columns(
-        pl.count().over("Metadata_treatment").alias("Metadata_treatment_n_cells")
+        pl.count().over(treatment_col).alias("Metadata_treatment_n_cells")
     )
-
     # Calculate the ratio as a percentage
     result_df = result_df.with_columns(
         (
@@ -209,61 +257,170 @@ def cluster_profiles(
     return result_df
 
 
-def assess_heterogeneity(
+@beartype
+def optimized_clustering(
     profiles: pl.DataFrame,
-    meta: list[str] | pl.Series,
-    features: list[str] | pl.Series,
-    n_trials: int = 20,
-    n_jobs: int = 1,
+    meta_features: list[str] | pl.Series,
+    morph_features: list[str] | pl.Series,
+    treatment_col: str,
+    param_grid: dict[str, Any],
+    n_trials: int = 100,
     seed: int = 0,
+    n_jobs: int = 1,
     study_name: str | None = None,
-) -> dict[str, Any]:
-    """Assess cellular heterogeneity through optimized clustering.
+) -> pl.DataFrame:
+    """Optimize clustering parameters using Optuna to maximize silhouette score.
+
+    This function uses Optuna to find the best parameters for the cluster_profiles function
+    by maximizing the silhouette score across all treatments. It performs hyperparameter
+    optimization and returns the clustered profiles using the best parameters found.
 
     Parameters
     ----------
     profiles : pl.DataFrame
-        DataFrame containing single-cell profiles
-    meta : Union[list[str], pl.Series]
-        Metadata columns
-    features : Union[list[str], pl.Series]
-        Feature columns to use for clustering
-    n_trials : int, optional
-        Number of optimization trials, by default 20
-    n_jobs : int, optional
-        Number of parallel jobs, by default 1
-    seed : int, optional
-        Random seed, by default 0
-    study_name : Optional[str], optional
-        Name for the Optuna study, by default None
+        DataFrame containing single-cell profiles with morphological features and
+        metadata.
+    meta_features : list[str] | pl.Series
+        List or Series of column names used to group profiles into treatment groups for
+        per-group clustering.
+    morph_features : list[str] | pl.Series
+        List or Series of column names representing morphological features to use for
+        clustering.
+    treatment_col : str
+        Column name in profiles indicating treatment (used for labeling clusters).
+    param_grid : Dict[str, Any]
+        Dictionary defining the parameter search space. Each key should be a parameter
+        name from cluster_profiles, and each value should be a dictionary with 'type'
+        and range info.
+    n_trials : int, default 100
+        Number of optimization trials to run.
+    seed : int, default 0
+        Random seed for reproducibility.
+    n_jobs : int, default 1
+        Number of parallel jobs for Optuna optimization.
+    study_name : str | None, default None
+        Name for the Optuna study. If None, a default name will be generated.
 
     Returns
     -------
-    Dict[str, Any]
-        Dictionary containing study results and cluster labels
-    """
-    # Validate inputs
-    _validate_inputs(profiles, meta, features)
+    pl.DataFrame
+        Original profiles DataFrame with optimized clustering results, same format as
+        cluster_profiles output.
 
-    # Perform optimization
-    study, cluster_labels = optimized_clustering(
-        profiles=profiles,
-        meta=meta,
-        features=features,
-        n_trials=n_trials,
-        n_jobs=n_jobs,
-        seed=seed,
+    Raises
+    ------
+    ValueError
+        If param_grid contains unsupported parameter types or invalid parameter names.
+    """
+
+    # first check if the param_grid is valid and contains valid parameter names
+    _validate_param_grid(param_grid)
+
+    # generate the objective function for Optuna
+    # this function will be called by Optuna to evaluate each set of parameters
+    def objective(trial: optuna.Trial):
+        """Optuna objective function to maximize silhouette score."""
+        # Sample parameters from the parameter grid
+        params = {}
+
+        for param_name, param_config in param_grid.items():
+            if param_config["type"] == "float":
+                # Support log-scale sampling for float parameters
+                log_scale = param_config.get("log", False)
+                params[param_name] = trial.suggest_float(
+                    param_name, param_config["low"], param_config["high"], log=log_scale
+                )
+            elif param_config["type"] == "int":
+                # Support log-scale sampling for int parameters
+                log_scale = param_config.get("log", False)
+                params[param_name] = trial.suggest_int(
+                    param_name, param_config["low"], param_config["high"], log=log_scale
+                )
+            elif param_config["type"] == "categorical":
+                params[param_name] = trial.suggest_categorical(
+                    param_name, param_config["choices"]
+                )
+            else:
+                raise ValueError(f"Unsupported parameter type: {param_config['type']}")
+
+        # Add seed to params (not optimized but needed for cluster_profiles)
+        params["seed"] = seed
+
+        try:
+            # Run clustering with current parameters
+            clustered_profiles = cluster_profiles(
+                profiles=profiles,
+                meta_features=meta_features,
+                morph_features=morph_features,
+                treatment_col=treatment_col,
+                **params,
+            )
+
+            # Calculate silhouette score for each treatment separately
+            silhouette_scores = []
+
+            for treatment in profiles.get_column(treatment_col).unique().to_list():
+                treatment_mask = (
+                    clustered_profiles.get_column(treatment_col) == treatment
+                )
+                treatment_data = clustered_profiles.filter(treatment_mask)
+
+                # Skip treatments with too few cells or only one cluster
+                if len(treatment_data) < 2:
+                    continue
+
+                cluster_labels = treatment_data.get_column(
+                    "Metadata_cluster_id"
+                ).to_numpy()
+                unique_clusters = np.unique(cluster_labels)
+
+                # Skip if only one cluster (silhouette score undefined)
+                if len(unique_clusters) < 2:
+                    continue
+
+                # Get the feature matrix for this treatment
+                features_matrix = treatment_data.select(morph_features).to_numpy()
+
+                # Calculate silhouette score
+                score = silhouette_score(features_matrix, cluster_labels)
+                silhouette_scores.append(score)
+
+            # Return mean silhouette score across all treatments
+            if silhouette_scores:
+                return np.mean(silhouette_scores)
+            else:
+                # If no valid scores, return a very low score to penalize this configuration
+                return -1.0
+
+        except Exception as e:
+            print(f"Exception in Optuna objective: {e}")
+            return -1.0
+
+    # Create Optuna study
+    if study_name is None:
+        study_name = f"cluster_optimization_{seed}"
+
+    study = optuna.create_study(
+        direction="maximize",
         study_name=study_name,
+        sampler=optuna.samplers.TPESampler(seed=seed),
     )
 
-    # Compile results
-    results = {
-        "study": study,
-        "cluster_labels": cluster_labels,
-        "best_score": study.best_value,
-        "best_params": study.best_trial.params,
-        "n_clusters": np.unique(cluster_labels).size,
-        "n_trials": len(study.trials),
-    }
+    # Run optimization with or without progress bar
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        n_jobs=n_jobs,
+    )
 
-    return results
+    # Run final clustering with best parameters
+    optimized_result = cluster_profiles(
+        profiles=profiles,
+        meta_features=meta_features,
+        morph_features=morph_features,
+        treatment_col=treatment_col,
+        **study.best_params,
+        seed=seed,
+    )
+
+    return optimized_result
