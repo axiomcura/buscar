@@ -171,11 +171,22 @@ def cluster_profiles(
     ------
     ValueError
         If pca_variance_explained is not between 0 and 1.
+        If pca_n_components_to_capture_variance is greater than the number of
+        morphological features.
+        If pca_n_components_to_capture_variance does not capture the desired
+        variance.
     """
 
     # Validation
     if not (0 < pca_variance_explained <= 1):
         raise ValueError("pca_variance_explained must be between 0 and 1")
+
+    # check if the number of components is not higher than the number of features
+    if pca_n_components_to_capture_variance > len(morph_features):
+        raise ValueError(
+            "pca_n_components_to_capture_variance cannot be greater than the",
+            "number of morphological features",
+        )
 
     # 1. Convert to AnnData and add treatment info to .obs
     obs_df = profiles.select(meta_features).to_pandas()
@@ -200,8 +211,14 @@ def cluster_profiles(
         )
 
         # 2. Find the number of PCs that explains specified variance
-        variance_ratio = np.cumsum(adata.uns["pca"]["variance_ratio"])
-        n_pcs_95 = np.min(np.where(variance_ratio >= pca_variance_explained)[0]) + 1
+        try:
+            variance_ratio = np.cumsum(adata.uns["pca"]["variance_ratio"])
+            n_pcs_95 = np.min(np.where(variance_ratio >= pca_variance_explained)[0]) + 1
+        except ValueError:
+            raise ValueError(
+                "Unable to find number of PCs to explain the desired variance."
+                "Try increasing pca_n_components_to_capture_variance."
+            )
 
         # 3. Use the PCA space to compute neighbors
         sc.pp.neighbors(
