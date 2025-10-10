@@ -358,7 +358,8 @@ def optimized_clustering(
     -------
     tuple(pl.DataFrame, dict[str, Any])
         Original profiles DataFrame with optimized clustering results, same format as
-        cluster_profiles output. And a dictionary of the best parameters found.
+        cluster_profiles output. And a dictionary of the best parameters found
+        and the cluster labels.
 
     Raises
     ------
@@ -424,6 +425,8 @@ def optimized_clustering(
     if study_name is None:
         study_name = f"cluster_optimization_{seed}"
 
+    # using TPES sample for Bayesian optimization when searching the parameter
+    # space
     study = optuna.create_study(
         direction="maximize",
         study_name=study_name,
@@ -446,5 +449,9 @@ def optimized_clustering(
         **study.best_params,
         seed=seed,
     )
+
+    study.best_params["cluster_labels"] = optimized_result[
+        "Metadata_cluster_id"
+    ].to_list()
 
     return optimized_result, study.best_params
