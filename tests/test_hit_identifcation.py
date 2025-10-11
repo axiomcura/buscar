@@ -7,7 +7,7 @@ import pytest
 # Add the parent directory to the path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.identify_hits import calculate_weighted_sum, identify_compound_hit
+from utils._identify_hits import calculate_weighted_sum, identify_compound_hit
 
 
 @pytest.fixture
