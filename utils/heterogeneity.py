@@ -450,8 +450,9 @@ def optimized_clustering(
         seed=seed,
     )
 
-    study.best_params["cluster_labels"] = optimized_result[
-        "Metadata_cluster_id"
-    ].to_list()
+    # copy is required beacause study.best_params is read-only
+    # add cluster labels to best_params dictioanry
+    best_params = dict(study.best_params)
+    best_params["cluster_labels"] = optimized_result["Metadata_cluster_id"].to_list()
 
-    return optimized_result, study.best_params
+    return optimized_result, best_params
