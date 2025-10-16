@@ -160,6 +160,8 @@ else:
         json.dump({"on": on_sigs, "off": off_sigs}, f, indent=4)
 
 
+# assess heterogeneity
+
 # In[6]:
 
 
@@ -251,6 +253,8 @@ else:
         )
 
 
+# Measure phenotypic activity between clusters
+
 # In[7]:
 
 
@@ -296,6 +300,8 @@ else:
     treatment_dist_scores.write_csv(treatment_dist_scores_outpath)
     treatment_heart_dist_scores.write_csv(treatment_heart_dist_scores_outpath)
 
+
+# Rank treatments
 
 # In[8]:
 
