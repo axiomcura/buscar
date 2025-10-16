@@ -11,13 +11,12 @@ import optuna
 import polars as pl
 import scanpy as sc
 from beartype import beartype
-from scipy.stats import hmean
 from sklearn.metrics import silhouette_score
 
 from .validator import _validate_param_grid
 
 
-def calculate_hmean_silhouette_score(
+def calculate_mean_silhouette_score(
     clustered_profiles: pl.DataFrame,
     morph_features: list[str] | pl.Series,
     treatment_col: str,
@@ -82,8 +81,9 @@ def calculate_hmean_silhouette_score(
         silhouette_scores.append(score)
 
     # Return harmonic mean silhouette score across all treatments
+    print(f"DEBUGG: Silhouette scores per treatment: {silhouette_scores}")
     if silhouette_scores:
-        return hmean(silhouette_scores)
+        return np.mean(silhouette_scores)
     else:
         # If no valid scores, return a very low score to penalize this configuration
         return -1.0
@@ -101,7 +101,7 @@ def cluster_profiles(
     n_neighbors: int = 15,
     neighbor_distance_metric: Literal["cosine", "euclidean", "manhattan"] = "euclidean",
     pca_variance_explained: float = 0.95,
-    pca_n_components_to_capture_variance: int = 200,
+    pca_n_components_to_capture_variance: int = 300,
     pca_svd_solver: Literal["arpack", "randomized"] = "randomized",
     seed: int = 0,
 ) -> pl.DataFrame:
@@ -411,7 +411,7 @@ def optimized_clustering(
             )
 
             # Calculate and return harmonic mean silhouette score
-            return calculate_hmean_silhouette_score(
+            return calculate_mean_silhouette_score(
                 clustered_profiles=clustered_profiles,
                 morph_features=morph_features,
                 treatment_col=treatment_col,
