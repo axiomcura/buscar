@@ -37,19 +37,23 @@ from utils.data_utils import split_meta_and_features
 def load_and_concat_profiles(
     profile_dir: str | pathlib.Path,
     shared_features: list[str] | None = None,
+    shared_contains_meta: bool = False,
     specific_plates: list[pathlib.Path] | None = None,
 ) -> pl.DataFrame:
     """
-    Load all profile files from a directory and concatenate them into a single Polars DataFrame.
+    Load all profile files from a directory and concatenate them into a single Polars
+    DataFrame.
 
     Parameters
     ----------
     profile_dir : str or pathlib.Path
         Directory containing the profile files (.parquet).
     shared_features : Optional[list[str]], optional
-        List of shared feature names to filter the profiles. If None, all features are loaded.
+        List of shared feature names to filter the profiles. If None, all features are
+        loaded.
     specific_plates : Optional[list[pathlib.Path]], optional
-        List of specific plate file paths to load. If None, all profiles in the directory are loaded.
+        List of specific plate file paths to load. If None, all profiles in the
+        directory are loaded.
 
     Returns
     -------
@@ -71,13 +75,24 @@ def load_and_concat_profiles(
                 "All elements in specific_plates must be pathlib.Path objects"
             )
 
-    def load_profile(file: pathlib.Path) -> pl.DataFrame:
+    def load_profile(profile_path: pathlib.Path) -> pl.DataFrame:
         """internal function to load a single profile file."""
-        profile_df = pl.read_parquet(file)
-        meta_cols, _ = split_meta_and_features(profile_df)
+
+        # load profiles
+        profile_df = pl.read_parquet(profile_path)
+
+        # print shape
+        print(f"Loaded profile {profile_path.name} with shape {profile_df.shape}")
+
+        # if provided shared feature list does not contain meta, split and select
+        # then get it from the profile, if it does, just select the shared features
+        # directly
         if shared_features is not None:
-            # Only select metadata and shared features
-            return profile_df.select(meta_cols + shared_features)
+            if not shared_contains_meta:
+                meta_cols, _ = split_meta_and_features(profile_df)
+                return profile_df.select(meta_cols + shared_features)
+
+            return profile_df.select(shared_features)
         return profile_df
 
     # Use specific_plates if provided, otherwise gather all .parquet files
@@ -160,6 +175,60 @@ def remove_feature_prefixes(df: pl.DataFrame, prefix: str = "CP__") -> pl.DataFr
     return df.rename(lambda x: x.replace(prefix, "") if prefix in x else x)
 
 
+def find_shared_features_across_parquets(
+    profile_paths: list[str | pathlib.Path],
+) -> list[str]:
+    """
+    Finds the intersection of column names across multiple parquet files.
+
+    This function returns the list of column names that are present in every provided parquet file.
+    The order of columns is preserved from the first file. Uses LazyFrame.collect_schema().names()
+    to avoid expensive full reads and the PerformanceWarning.
+
+    Parameters
+    ----------
+    profile_paths : list of str or pathlib.Path
+        List of paths to parquet files.
+
+    Returns
+    -------
+    list of str
+        List of shared column names present in all files, in the order from the first file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no parquet files are provided or any file does not exist.
+    """
+    if not profile_paths:
+        raise FileNotFoundError("No parquet files provided")
+
+    # check if they are all strings if so, convert to pathlib.Path
+    if all(isinstance(p, str) for p in profile_paths):
+        profile_paths = [pathlib.Path(p) for p in profile_paths]
+
+    for p in profile_paths:
+        if not p.exists():
+            raise FileNotFoundError(f"Profile file not found: {p}")
+
+    # set the first file columns as the initial set
+    first_cols = pl.scan_parquet(profile_paths[0]).collect_schema().names()
+    common = set(first_cols)
+
+    # iterate through the rest of the files and find shared columns
+    # of the rest of the profiles
+    for p in profile_paths[1:]:
+        cols = pl.scan_parquet(p).collect_schema().names()
+        common &= set(cols)
+        if not common:
+            # Early exit if no shared columns remain
+            return []
+
+    # Preserve first file ordering (Meta and features order)
+    shared_features = [c for c in first_cols if c in common]
+    return shared_features
+
+
 # Defining the input and output directories used throughout the notebook.
 #
 # > **Note:** The shared profiles utilized here are sourced from the [JUMP-single-cell](https://github.com/WayScience/JUMP-single-cell) repository. All preprocessing and profile generation steps are performed in that repository, and this notebook focuses on downstream analysis using the generated profiles.
@@ -184,6 +253,9 @@ cfret_profiles_path = (
     cfret_profiles_dir / "localhost230405150001_sc_feature_selected.parquet"
 ).resolve(strict=True)
 
+# cfret-screen profiles path
+cfret_screen_profiles_path = profiles_dir / "cfret-screen"
+
 # Setting feature selection path
 shared_features_config_path = (
     profiles_dir / "cpjump1" / "feature_selected_sc_qc_features.json"
@@ -194,6 +266,11 @@ mitocheck_profiles_dir = (profiles_dir / "mitocheck").resolve(strict=True)
 mitocheck_norm_profiles_dir = (mitocheck_profiles_dir / "normalized_data").resolve(
     strict=True
 )
+
+# seting cfret-screen profiles paths
+cfret_screen_profiles_paths = [
+    path.resolve(strict=True) for path in cfret_screen_profiles_path.glob("*.parquet")
+]
 
 # output directories
 cpjump1_output_dir = (profiles_dir / "cpjump1" / "trt-profiles").resolve()
@@ -238,7 +315,7 @@ shared_features = loaded_shared_features["shared-features"]
 # - Data integrity is maintained during the merge operation
 # - Adding a unique cell id has column `Metadata_cell_id`
 
-# In[ ]:
+# In[5]:
 
 
 # Loading crispr profiles with shared features and concat into a single DataFrame
@@ -253,8 +330,8 @@ loaded_profiles = load_and_concat_profiles(
 )
 
 # create an index columm and unique cell ID based on features of a single profiles
-loaded_profiles = loaded_profiles.with_row_index("index").with_columns(  # set index row
-    loaded_profiles.hash_rows().alias("Metadata_cell_id")
+loaded_profiles = loaded_profiles.with_row_index("index").with_columns(
+    loaded_profiles.hash_rows(seed=0).alias("Metadata_cell_id").cast(pl.Utf8)
 )
 
 # Split meta and features
@@ -432,7 +509,7 @@ concat_mitocheck_profiles = (
 
 # add unique cell ID based on features of a single profiles
 concat_mitocheck_profiles = concat_mitocheck_profiles.with_columns(
-    concat_mitocheck_profiles.hash_rows().alias("Metadata_cell_id")
+    concat_mitocheck_profiles.hash_rows().alias("Metadata_cell_id").cast(pl.Utf8)
 )
 
 # save concatenated mitocheck profiles
@@ -475,3 +552,63 @@ with open(cfret_profiles_dir / "cfret_feature_space_configs.json", "w") as f:
 
 # overwrite dataset with cell
 cfret_profiles.select(meta_cols + features_cols).write_parquet(cfret_profiles_path)
+
+
+# ## Preprocessing CFReT Screen Dataset
+#
+# This section preprocesses the CFReT Screen dataset by concatenating all plate profiles into a single unified dataframe. This represents the first batch of plates, which are technical replicates containing identical treatment conditions and dosages across all plates.
+#
+# **Dataset characteristics:**
+# - Each plate contains both positive (n=3) and negative (n=3) controls
+# - All treatment plates share the same experimental conditions
+# - Technical replicates is at the plate level
+#
+# **Preprocessing steps:**
+#
+# 1. **Feature alignment**: Identify shared features across all CFReT Screen plates to ensure consistent feature space
+# 2. **Profile concatenation**: Merge all plate profiles into a single comprehensive dataframe using the shared feature set
+# 3. **Unique cell identification**: Add `Metadata_cell_id` column with unique hash values to enable precise single-cell tracking
+
+# In[ ]:
+
+
+# find shared features across cfret-screen profiles and load and concat them
+cfret_screen_shared_features = find_shared_features_across_parquets(
+    cfret_screen_profiles_paths
+)
+cfret_screen_concat_profiles = load_and_concat_profiles(
+    profile_dir=cfret_screen_profiles_path,
+    shared_features=cfret_screen_shared_features,
+    shared_contains_meta=True,
+)
+
+# add unique cell ID as a string type
+cfret_screen_concat_profiles = cfret_screen_concat_profiles.with_columns(
+    cfret_screen_concat_profiles.hash_rows(seed=0)
+    .alias("Metadata_cell_id")
+    .cast(pl.Utf8)
+)
+
+# split the metadata and features and reorganize features in the concat profile
+cfret_screen_meta_cols, cfret_screen_features_cols = split_meta_and_features(
+    cfret_screen_concat_profiles
+)
+cfret_screen_concat_profiles = cfret_screen_concat_profiles.select(
+    cfret_screen_meta_cols + cfret_screen_features_cols
+)
+
+# save feature space config to json file
+with open(cfret_profiles_dir / "cfret_screen_feature_space_configs.json", "w") as f:
+    json.dump(
+        {
+            "metadata-features": cfret_screen_meta_cols,
+            "morphology-features": cfret_screen_features_cols,
+        },
+        f,
+        indent=4,
+    )
+
+# save concatenated cfret-screen profiles
+cfret_screen_concat_profiles.write_parquet(
+    cfret_screen_profiles_path / "cfret_screen_concat_profiles.parquet"
+)
