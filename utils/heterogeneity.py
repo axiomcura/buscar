@@ -99,72 +99,59 @@ def cluster_profiles(
     cluster_resolution: float = 1.0,
     n_neighbors: int = 15,
     neighbor_distance_metric: Literal["cosine", "euclidean", "manhattan"] = "euclidean",
+    min_cells_per_treatment: int = 10,
     seed: int = 0,
 ) -> pl.DataFrame:
     """Cluster single-cell profiles using graph-based clustering algorithms.
 
-    This function performs clustering on single-cell morphological profiles by constructing
-    a nearest neighbor graph and applying Louvain or Leiden clustering algorithms.
-    Clustering is performed separately for each treatment group using the `restrict_to`
-    parameter in scanpy, ensuring that cells are clustered within their treatment context
-    while sharing a common neighbor graph across all cells.
-
-    The function assumes that input data has been normalized prior to clustering.
+    Performs per-treatment clustering in a shared embedding space by:
+    1. Computing neighbors on the full dataset (shared space)
+    2. Subsetting to each treatment independently
+    3. Clustering each treatment subset
+    4. Combining results with unique cluster IDs per treatment
 
     Parameters
     ----------
     profiles : pl.DataFrame
         DataFrame containing single-cell profiles with morphological features and metadata.
     meta_features : list[str] | pl.Series
-        List or Series of column names representing metadata features to retain in the output.
+        List or Series of column names representing metadata features to retain in output.
     morph_features : list[str] | pl.Series
         List or Series of column names representing morphological features to use for
         neighbor graph construction and clustering.
     treatment_col : str
-        Column name in profiles indicating treatment groups. Each treatment will be
-        clustered independently while sharing the same neighbor graph structure.
+        Column name indicating treatment groups. Each treatment will be clustered
+        independently.
     cluster_method : Literal["louvain", "leiden"], default "leiden"
-        Clustering algorithm to use:
-        - "louvain": Fast community detection, more tolerant of edge cases
-        - "leiden": Improved Louvain algorithm with better guarantees
+        Clustering algorithm to use.
     cluster_resolution : float, default 1.0
-        Resolution parameter controlling cluster granularity. Higher values produce
-        more clusters, lower values produce fewer clusters.
+        Resolution parameter controlling cluster granularity.
     n_neighbors : int, default 15
-        Number of nearest neighbors to use for constructing the neighbor graph.
-        Larger values create more connected graphs, smaller values emphasize local structure.
+        Number of nearest neighbors for graph construction.
     neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default "euclidean"
-        Distance metric for neighbor graph construction:
-        - "euclidean": Standard Euclidean distance (recommended for most cases)
-        - "cosine": Cosine similarity (useful for normalized/sparse data)
-        - "manhattan": L1 distance (robust to outliers)
+        Distance metric for neighbor graph.
+    min_cells_per_treatment : int, default 10
+        Minimum cells required per treatment for clustering. Treatments with fewer cells
+        are labeled as "{treatment}_insufficient_cells".
     seed : int, default 0
-        Random seed for reproducibility of clustering results.
+        Random seed for reproducibility.
 
     Returns
     -------
     pl.DataFrame
-        Original profiles DataFrame with four additional columns:
-        - "Metadata_cluster_id": Cluster labels formatted as "{treatment}_{method}_{cluster_id}"
+        Original profiles with four additional columns:
+        - "Metadata_cluster_id": "{treatment}_{method}_{cluster_id}" or
+        "{treatment}_insufficient_cells" for small treatments
         - "Metadata_cluster_n_cells": Number of cells in each cluster
-        - "Metadata_treatment_n_cells": Total number of cells per treatment
+        - "Metadata_treatment_n_cells": Total cells per treatment
         - "Metadata_cluster_ratio": Percentage of treatment cells in each cluster
 
-    Notes
-    -----
-    The function uses scanpy's `restrict_to` parameter to cluster each treatment
-    independently while maintaining a shared neighbor graph. This ensures that:
-    1. All cells contribute to the neighbor graph construction
-    2. Clustering decisions are made within each treatment context
-    3. Cluster labels are unique across treatments
-
-    See Also
-    --------
-    optimized_clustering : Automatic parameter optimization using Optuna
-    calculate_hmean_silhouette_score : Evaluate clustering quality
+    Raises
+    ------
+    ValueError
+        If treatment_col not in profiles, or if morph_features contain NaN/Inf values.
 
     """
-
     # 1. Convert to AnnData and add treatment info to .obs
     # this can either be PCA-reduced data or raw data
     obs_df = profiles.select(meta_features).to_pandas()
@@ -188,55 +175,65 @@ def cluster_profiles(
         metric=neighbor_distance_metric,
     )
 
-    # Prepare a list to hold cluster labels for all cells
+    # 3. Cluster each treatment independently
     all_cluster_labels = [""] * len(profiles)
+    treatments = profiles.get_column(treatment_col).unique().to_list()
 
-    # 3. Apply clustering for each treatment
-    for treatment in profiles.get_column(treatment_col).unique().to_list():
-        # Get indices for the current treatment
+    for treatment in treatments:
+        # Get indices for current treatment
         treatment_mask = profiles.get_column(treatment_col) == treatment
         treatment_indices = np.where(treatment_mask.to_numpy())[0]
 
-        # 3. Apply clustering with restrict_to for selected treatment
-        if cluster_method == "louvain":
-            sc.tl.louvain(
-                adata,
-                restrict_to=(treatment_col, [treatment]),  # Only cluster these cells
-                resolution=cluster_resolution,
-                random_state=seed,
-                key_added=f"louvain_{treatment}",
-            )
-            cluster_key = f"louvain_{treatment}"
-        elif cluster_method == "leiden":
-            sc.tl.leiden(
-                adata,
-                restrict_to=(treatment_col, [treatment]),  # Only cluster these cells
-                resolution=cluster_resolution,
-                random_state=seed,
-                key_added=f"leiden_{treatment}",
-            )
-            cluster_key = f"leiden_{treatment}"
+        # Check if treatment has enough cells
+        n_cells = len(treatment_indices)
+        if n_cells < min_cells_per_treatment:
+            # Label as insufficient
+            for idx in treatment_indices:
+                all_cluster_labels[idx] = f"{treatment}_insufficient_cells"
+            continue
 
-        # Assign cluster labels back to the main list
-        for _, idx in enumerate(treatment_indices):
-            # Get the cluster label for this cell using iloc
-            cluster_label = adata.obs[cluster_key].iloc[idx]
+        # Subset AnnData to this treatment only
+        treatment_adata = adata[treatment_indices].copy()
 
-            # Extract cluster id if label is a tuple or string with comma
-            if isinstance(cluster_label, (tuple, list)):
-                cluster_id = cluster_label[-1]
-            elif isinstance(cluster_label, str) and "," in cluster_label:
-                cluster_id = cluster_label.split(",")[-1].strip()
-            else:
-                cluster_id = cluster_label
-            all_cluster_labels[idx] = f"{treatment}_{cluster_method}_{cluster_id}"
+        try:
+            # Apply clustering to the subset
+            if cluster_method == "louvain":
+                sc.tl.louvain(
+                    treatment_adata,
+                    resolution=cluster_resolution,
+                    random_state=seed,
+                    key_added="cluster",
+                )
+            elif cluster_method == "leiden":
+                sc.tl.leiden(
+                    treatment_adata,
+                    resolution=cluster_resolution,
+                    random_state=seed,
+                    key_added="cluster",
+                )
 
-    # Add the cluster labels to the original DataFrame
+            # Extract cluster labels (now they're simple strings like "0", "1", etc.)
+            cluster_labels = treatment_adata.obs["cluster"].values
+
+            # Assign back to full list with treatment prefix
+            for i, idx in enumerate(treatment_indices):
+                all_cluster_labels[idx] = (
+                    f"{treatment}_{cluster_method}_{cluster_labels[i]}"
+                )
+
+        except Exception as e:
+            # Handle clustering failures gracefully
+            for idx in treatment_indices:
+                all_cluster_labels[idx] = f"{treatment}_cluster_failed"
+            print(f"Warning: Clustering failed for treatment {treatment}: {e}")
+
+    # 4. Add cluster labels and statistics to original DataFrame
     result_df = profiles.with_columns(
         pl.Series(name="Metadata_cluster_id", values=all_cluster_labels).cast(
             pl.Categorical
         )
     )
+
     # Add cluster cell counts
     result_df = result_df.with_columns(
         pl.count().over("Metadata_cluster_id").alias("Metadata_cluster_n_cells")
@@ -246,7 +243,8 @@ def cluster_profiles(
     result_df = result_df.with_columns(
         pl.count().over(treatment_col).alias("Metadata_treatment_n_cells")
     )
-    # Calculate the ratio as a percentage
+
+    # Calculate cluster ratio as percentage
     result_df = result_df.with_columns(
         (
             pl.col("Metadata_cluster_n_cells")
