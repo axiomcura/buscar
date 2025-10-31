@@ -14,7 +14,6 @@ def apply_pca(
     meta_features: list[str],
     morph_features: list[str],
     var_explained=0.95,
-    svd_solver="randomized",
     standardize=False,
     random_state=0,
     **kwargs,
@@ -32,8 +31,6 @@ def apply_pca(
     var_explained : float, optional
         The amount of variance to be explained by the selected components.
         Default is 0.95.
-    svd_solver : str, optional
-        The SVD solver to use. Default is "randomized".
     standardize : bool, optional
         Whether to standardize the morphological features before applying PCA.
         Default is False.
@@ -66,7 +63,6 @@ def apply_pca(
     # apply PCA
     pca = PCA(
         n_components=var_explained,
-        svd_solver=svd_solver,
         random_state=random_state,
         **kwargs,
     )
