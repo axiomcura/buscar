@@ -11,21 +11,23 @@ import optuna
 import polars as pl
 import scanpy as sc
 from beartype import beartype
-from scipy.stats import hmean
+
+# from scipy.stats import hmean
 from sklearn.metrics import silhouette_score
+from tqdm import tqdm
 
 from .validator import _validate_param_grid
 
 
-def calculate_hmean_silhouette_score(
+def calculate_mean_silhouette_score(
     clustered_profiles: pl.DataFrame,
     morph_features: list[str] | pl.Series,
     treatment_col: str,
 ) -> float:
-    """Calculate harmonic mean silhouette score across all treatments in clustered profiles.
+    """Calculate mean silhouette score across all treatments in clustered profiles.
 
     This function computes the silhouette score for each treatment group separately
-    and returns the harmonic mean score across all treatments. Treatments with too few cells
+    and returns the mean score across all treatments. Treatments with too few cells
     or only one cluster are skipped. If no valid scores can be computed, returns -1.0.
 
     These calculations are done within the optimized_clustering function to evaluate
@@ -81,9 +83,10 @@ def calculate_hmean_silhouette_score(
         score = silhouette_score(features_matrix, cluster_labels)
         silhouette_scores.append(score)
 
-    # Return harmonic mean silhouette score across all treatments
+    # Return mean silhouette score across all treatments
     if silhouette_scores:
-        return hmean(silhouette_scores)
+        print("scores: ", silhouette_scores)
+        return np.mean(silhouette_scores)
     else:
         # If no valid scores, return a very low score to penalize this configuration
         return -1.0
@@ -221,7 +224,9 @@ def cluster_profiles(
     all_cluster_labels = [""] * len(profiles)
 
     # Iterate over unique treatments
-    for treatment in profiles.get_column(treatment_col).unique().to_list():
+
+    treatments = profiles.get_column(treatment_col).unique().to_list()
+    for treatment in tqdm(treatments, desc="Clustering treatments"):
         # Get indices for the current treatment
         treatment_mask = profiles.get_column(treatment_col) == treatment
         treatment_indices = np.where(treatment_mask.to_numpy())[0]
@@ -393,7 +398,7 @@ def optimized_clustering(
             )
 
             # Calculate and return harmonic mean silhouette score
-            return calculate_hmean_silhouette_score(
+            return calculate_mean_silhouette_score(
                 clustered_profiles=clustered_profiles,
                 morph_features=morph_features,
                 treatment_col=treatment_col,
