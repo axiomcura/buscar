@@ -97,88 +97,63 @@ def cluster_profiles(
     treatment_col: str,
     cluster_method: Literal["louvain", "leiden"] = "leiden",
     cluster_resolution: float = 1.0,
-    dim_reduction: Literal["PCA", "raw"] = "PCA",
     n_neighbors: int = 15,
     neighbor_distance_metric: Literal["cosine", "euclidean", "manhattan"] = "euclidean",
-    pca_variance_explained: float = 0.95,
-    pca_n_components_to_capture_variance: int = 200,
-    pca_svd_solver: Literal["arpack", "randomized"] = "randomized",
+    min_cells_per_treatment: int = 10,
     seed: int = 0,
 ) -> pl.DataFrame:
-    """Cluster single-cell profiles using a dimensionality reduction and clustering pipeline.
+    """Cluster single-cell profiles using graph-based clustering algorithms.
 
-    This function performs clustering on single-cell morphological profiles by first applying
-    dimensionality reduction (PCA or raw data) and then clustering using
-    Louvain or Leiden algorithms. Clustering is performed per treatment group defined by
-    meta_features, with dynamic adjustment of neighbors based on the number of cells in each group.
-
-    Keep in mind that this function assumes that you have normalized your data prior to
-    using this approach.
-
-
-    Pipeline for dim_reduction="PCA":
-    1. Run PCA with up to 100 components (or fewer based on data constraints).
-    2. Determine the number of PCs that explain at least pca_variance_explained of the
-    variance.
-    4. Compute neighbors in PCA space.
-    5. Apply clustering (Louvain or Leiden) in UMAP space per treatment group.
-
-    For dim_reduction="raw", neighbors are computed directly on raw data, and clustering
-    is applied per treatment group.
+    Performs per-treatment clustering in a shared embedding space by:
+    1. Computing neighbors on the full dataset (shared space)
+    2. Subsetting to each treatment independently
+    3. Clustering each treatment subset
+    4. Combining results with unique cluster IDs per treatment
 
     Parameters
     ----------
     profiles : pl.DataFrame
         DataFrame containing single-cell profiles with morphological features and metadata.
     meta_features : list[str] | pl.Series
-        List or Series of column names used to group profiles into treatment groups for
-        per-group clustering.
+        List or Series of column names representing metadata features to retain in output.
     morph_features : list[str] | pl.Series
         List or Series of column names representing morphological features to use for
-        clustering.
-    treatment_col : str, default
-        Column name in profiles indicating treatment (used for labeling clusters).
-    cluster_method : Literal["louvain", "leiden"], default "louvain"
-        Clustering algorithm to use: "louvain" or "leiden".
+        neighbor graph construction and clustering.
+    treatment_col : str
+        Column name indicating treatment groups. Each treatment will be clustered
+        independently.
+    cluster_method : Literal["louvain", "leiden"], default "leiden"
+        Clustering algorithm to use.
     cluster_resolution : float, default 1.0
-        Resolution parameter for clustering (higher values lead to more clusters).
-    dim_reduction : Literal["PCA", "raw"], default "PCA"
-        Dimensionality reduction method: "PCA" for PCA->UMAP pipeline, "raw" for direct
-        use of raw data.
+        Resolution parameter controlling cluster granularity.
     n_neighbors : int, default 15
-        Maximum number of neighbors for neighbor graph construction.
-    neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default
-    "euclidean"
-        Distance metric to use when constructing the neighbor graph.
-        - For PCA or UMAP-reduced spaces, "euclidean" or "manhattan" are recommended.
-        - For clustering directly on raw feature space, "cosine" is often preferred.
-    pca_variance_explained : float, default 0.95
-        Fraction of variance to be explained by selected PCs (must be between 0 and 1).
-    pca_n_components_to_capture_variance : int, default 200
-        Maximum number of PCA components to compute when capturing variance.
-    pca_svd_solver : Literal["arpack", "randomized"], default "randomized"
-        SVD solver is the underlying algorithm used to compute the principal components
+        Number of nearest neighbors for graph construction.
+    neighbor_distance_metric : Literal["cosine", "euclidean", "manhattan"], default "euclidean"
+        Distance metric for neighbor graph.
+    min_cells_per_treatment : int, default 10
+        Minimum cells required per treatment for clustering. Treatments with fewer cells
+        are labeled as "{treatment}_insufficient_cells".
     seed : int, default 0
         Random seed for reproducibility.
 
     Returns
     -------
     pl.DataFrame
-        Original profiles DataFrame with an additional column "Metadata_cluster_id"
-        containing cluster labels as categorical values, prefixed by treatment
-        (e.g., "treatment_0").
+        Original profiles with four additional columns:
+        - "Metadata_cluster_id": "{treatment}_{method}_{cluster_id}" or
+        "{treatment}_insufficient_cells" for small treatments
+        - "Metadata_cluster_n_cells": Number of cells in each cluster
+        - "Metadata_treatment_n_cells": Total cells per treatment
+        - "Metadata_cluster_ratio": Percentage of treatment cells in each cluster
 
     Raises
     ------
     ValueError
-        If pca_variance_explained is not between 0 and 1.
+        If treatment_col not in profiles, or if morph_features contain NaN/Inf values.
+
     """
-
-    # Validation
-    if not (0 < pca_variance_explained <= 1):
-        raise ValueError("pca_variance_explained must be between 0 and 1")
-
     # 1. Convert to AnnData and add treatment info to .obs
+    # this can either be PCA-reduced data or raw data
     obs_df = profiles.select(meta_features).to_pandas()
     obs_df.index = obs_df.index.astype(str)
 
@@ -191,81 +166,68 @@ def cluster_profiles(
     if adata.obs[treatment_col].dtype != "category":
         adata.obs[treatment_col] = adata.obs[treatment_col].astype("category")
 
-    if dim_reduction == "PCA":
-        # 1. Run PCA with enough components to capture variance
-        sc.pp.pca(
-            adata,
-            n_comps=pca_n_components_to_capture_variance,
-            svd_solver=pca_svd_solver,
-            random_state=seed,
-        )
+    # 2. Compute neighbors
+    sc.pp.neighbors(
+        adata,
+        n_neighbors=n_neighbors,
+        use_rep="X",
+        random_state=seed,
+        metric=neighbor_distance_metric,
+    )
 
-        # 2. Find the number of PCs that explains specified variance
-        variance_ratio = np.cumsum(adata.uns["pca"]["variance_ratio"])
-        n_pcs_95 = np.min(np.where(variance_ratio >= pca_variance_explained)[0]) + 1
-
-        # 3. Use the PCA space to compute neighbors
-        sc.pp.neighbors(
-            adata,
-            n_neighbors=n_neighbors,
-            n_pcs=n_pcs_95,
-            metric=neighbor_distance_metric,
-            random_state=seed,
-        )
-
-    elif dim_reduction == "raw":
-        # Compute neighbors directly on raw data
-        sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep="X", random_state=seed)
-
-    # Prepare a list to hold cluster labels for all cells
+    # 3. Cluster each treatment independently
     all_cluster_labels = [""] * len(profiles)
+    treatments = profiles.get_column(treatment_col).unique().to_list()
 
-    # Iterate over unique treatments
-    for treatment in profiles.get_column(treatment_col).unique().to_list():
-        # Get indices for the current treatment
+    for treatment in treatments:
+        # Get indices for current treatment
         treatment_mask = profiles.get_column(treatment_col) == treatment
         treatment_indices = np.where(treatment_mask.to_numpy())[0]
 
-        # For treatments with too few cells, assign "no_cluster"
-        if len(treatment_indices) < 2:
+        # Check if treatment has enough cells
+        n_cells = len(treatment_indices)
+        if n_cells < min_cells_per_treatment:
+            # Label as insufficient
             for idx in treatment_indices:
-                all_cluster_labels[idx] = "no_cluster"
+                all_cluster_labels[idx] = f"{treatment}_insufficient_cells"
             continue
 
-        # Apply clustering with restrict_to for this treatment
-        if cluster_method == "louvain":
-            sc.tl.louvain(
-                adata,
-                restrict_to=(treatment_col, [treatment]),  # Only cluster these cells
-                resolution=cluster_resolution,
-                random_state=seed,
-                key_added=f"louvain_{treatment}",
-            )
-            cluster_key = f"louvain_{treatment}"
-        elif cluster_method == "leiden":
-            sc.tl.leiden(
-                adata,
-                restrict_to=(treatment_col, [treatment]),  # Only cluster these cells
-                resolution=cluster_resolution,
-                random_state=seed,
-                key_added=f"leiden_{treatment}",
-            )
-            cluster_key = f"leiden_{treatment}"
+        # Subset AnnData to this treatment only
+        treatment_adata = adata[treatment_indices].copy()
 
-        for _, idx in enumerate(treatment_indices):
-            # Get the cluster label for this cell using iloc
-            cluster_label = adata.obs[cluster_key].iloc[idx]
+        try:
+            # Apply clustering to the subset
+            if cluster_method == "louvain":
+                sc.tl.louvain(
+                    treatment_adata,
+                    resolution=cluster_resolution,
+                    random_state=seed,
+                    key_added="cluster",
+                )
+            elif cluster_method == "leiden":
+                sc.tl.leiden(
+                    treatment_adata,
+                    resolution=cluster_resolution,
+                    random_state=seed,
+                    key_added="cluster",
+                )
 
-            # Extract cluster id if label is a tuple or string with comma
-            if isinstance(cluster_label, (tuple, list)):
-                cluster_id = cluster_label[-1]
-            elif isinstance(cluster_label, str) and "," in cluster_label:
-                cluster_id = cluster_label.split(",")[-1].strip()
-            else:
-                cluster_id = cluster_label
-            all_cluster_labels[idx] = f"{treatment}_{cluster_method}_{cluster_id}"
+            # Extract cluster labels (now they're simple strings like "0", "1", etc.)
+            cluster_labels = treatment_adata.obs["cluster"].values
 
-    # Add the cluster labels to the original Polars DataFrame
+            # Assign back to full list with treatment prefix
+            for i, idx in enumerate(treatment_indices):
+                all_cluster_labels[idx] = (
+                    f"{treatment}_{cluster_method}_{cluster_labels[i]}"
+                )
+
+        except Exception as e:
+            # Handle clustering failures gracefully
+            for idx in treatment_indices:
+                all_cluster_labels[idx] = f"{treatment}_cluster_failed"
+            print(f"Warning: Clustering failed for treatment {treatment}: {e}")
+
+    # 4. Add cluster labels and statistics to original DataFrame
     result_df = profiles.with_columns(
         pl.Series(name="Metadata_cluster_id", values=all_cluster_labels).cast(
             pl.Categorical
@@ -281,7 +243,8 @@ def cluster_profiles(
     result_df = result_df.with_columns(
         pl.count().over(treatment_col).alias("Metadata_treatment_n_cells")
     )
-    # Calculate the ratio as a percentage
+
+    # Calculate cluster ratio as percentage
     result_df = result_df.with_columns(
         (
             pl.col("Metadata_cluster_n_cells")
