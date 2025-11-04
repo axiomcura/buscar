@@ -31,7 +31,7 @@ def apply_pca(
         List of column names corresponding to morphological features.
     var_explained : float or int, optional
         If a float between 0 and 1 is provided, it specifies the fraction of variance
-        to be explained by the selected components (default is 0.95).If an integer is
+        to be explained by the selected components (default is 0.95). If an integer is
         provided, it specifies the exact number of principal components to keep.
     svd_solver : str, optional
         The SVD solver to use for PCA. Default is 'full'. Options include 'auto', 'full',
