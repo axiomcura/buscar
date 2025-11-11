@@ -87,8 +87,8 @@ def identify_compound_hit(
     # forming control treatment cluster pairs
     paired_scores_df = (
         distance_df.lazy()
-        .sort(["treatment", "exp_cluster", "on_dist", "off_dist"])
-        .group_by(["treatment", "exp_cluster"])
+        .sort(["treatment", "trt_cluster", "on_dist", "off_dist"])
+        .group_by(["treatment", "trt_cluster"])
         .agg([pl.all().first()])
         .collect()
     ).rename(
