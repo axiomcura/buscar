@@ -175,4 +175,4 @@ results/
 *nohup.out
 
 # remove log
-*.log
+*.logs
