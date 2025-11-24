@@ -15,7 +15,7 @@
 #
 # These preprocessing steps ensure that all datasets are standardized, well-documented, and ready for comparative and integrative analyses.
 
-# In[1]:
+# In[2]:
 
 
 import json
@@ -31,7 +31,7 @@ from utils.data_utils import add_cell_id_hash, split_meta_and_features
 #
 # Contains helper function that pertains to this notebook.
 
-# In[2]:
+# In[3]:
 
 
 def load_and_concat_profiles(
@@ -269,7 +269,8 @@ mitocheck_norm_profiles_dir = (mitocheck_profiles_dir / "normalized_data").resol
 
 # seting cfret-screen profiles paths
 cfret_screen_profiles_paths = [
-    path.resolve(strict=True) for path in cfret_screen_profiles_path.glob("*.parquet")
+    path.resolve(strict=True)
+    for path in cfret_screen_profiles_path.glob("*_sc_feature_selected.parquet")
 ]
 
 # output directories
@@ -338,10 +339,8 @@ meta_cols, features_cols = split_meta_and_features(cpjump1_profiles)
 
 # Saving metadata and features of the concat profile into a json file
 meta_features_dict = {
-    "concat-profiles": {
-        "meta-features": meta_cols,
-        "shared-features": features_cols,
-    }
+    "metadata-features": meta_cols,
+    "morphology-features": features_cols,
 }
 with open(cpjump1_output_dir / "concat_profiles_meta_features.json", "w") as f:
     json.dump(meta_features_dict, f, indent=4)
@@ -561,13 +560,17 @@ cfret_profiles.select(meta_cols + features_cols).write_parquet(cfret_profiles_pa
 # 2. **Profile concatenation**: Merge all plate profiles into a single comprehensive dataframe using the shared feature set
 # 3. **Unique cell identification**: Add `Metadata_cell_id` column with unique hash values to enable precise single-cell tracking
 
-# In[ ]:
+# In[10]:
 
 
 # find shared features across cfret-screen profiles and load and concat them
 cfret_screen_shared_features = find_shared_features_across_parquets(
     cfret_screen_profiles_paths
 )
+print(
+    "total shared features in cfret-screen profiles:", len(cfret_screen_shared_features)
+)
+
 cfret_screen_concat_profiles = load_and_concat_profiles(
     profile_dir=cfret_screen_profiles_path,
     shared_features=cfret_screen_shared_features,
@@ -599,6 +602,9 @@ with open(cfret_profiles_dir / "cfret_screen_feature_space_configs.json", "w") a
         f,
         indent=4,
     )
+
+# add cell id hash
+cfret_screen_concat_profiles = add_cell_id_hash(cfret_screen_concat_profiles)
 
 # save concatenated cfret-screen profiles
 cfret_screen_concat_profiles.write_parquet(
