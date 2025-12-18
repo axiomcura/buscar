@@ -11,141 +11,19 @@
 # In[1]:
 
 
-import gzip
 import pathlib
 import sys
-import tarfile
-import zipfile
 
 import polars as pl
-import requests
-from tqdm import tqdm
 
 sys.path.append("../../")
 from utils import io_utils
-
-# ## Helper functions
-
-# In[2]:
-
-
-def download_compressed_file(
-    source_url: str,
-    output_path: pathlib.Path | str,
-    chunk_size: int = 8192,
-    extract: bool = True,
-) -> None:
-    """Downloads a compressed file from a URL with progress tracking.
-
-    Downloads a file from the specified URL and saves it to the given output path.
-    The download is performed in chunks to handle large files efficiently, and the progress is displayed using
-    the `tqdm` library. The function raises exceptions for various error conditions, including
-    invalid input types, file system errors, and issues during the download process.
-
-    Parameters
-    ----------
-    source_url : str
-        URL to download the file from.
-    output_path : pathlib.Path
-        Full path where the file should be saved.
-    chunk_size : int, optional
-        Size of chunks to download in bytes. Defaults to 8192.
-    extract : bool, optional
-        Whether to extract the compressed file after download. Defaults to True.
-
-    Raises
-    ------
-    requests.exceptions.RequestException
-        If there is an error during the download request.
-    Exception
-        For any unexpected error during file writing or progress tracking.
-    """
-
-    # type checking
-    if not isinstance(source_url, str):
-        raise TypeError(f"source_url must be a string, got {type(source_url)}")
-    if not isinstance(output_path, (pathlib.Path, str)):
-        raise TypeError(
-            f"output_path must be a pathlib.Path or str, got {type(output_path)}"
-        )
-    if isinstance(output_path, str):
-        output_path = pathlib.Path(output_path)
-    if not output_path.parent.exists():
-        raise FileNotFoundError(
-            f"Output directory {output_path.parent} does not exist."
-        )
-    if output_path.exists() and not output_path.is_file():
-        raise FileExistsError(f"Output path {output_path} exists and is not a file.")
-
-    # starting downloading process
-    try:
-        # sending GET request to the source URL
-        with requests.get(source_url, stream=True) as response:
-            # raise an error if the request was unsuccessful
-            response.raise_for_status()
-
-            # get the total size of the file from the response headers
-            total_size = int(response.headers.get("content-length", 0))
-
-            # using tqdm to track the download progress
-            with (
-                open(output_path, "wb") as file,
-                tqdm(
-                    desc="Downloading",
-                    total=total_size,
-                    unit="B",
-                    unit_scale=True,
-                    unit_divisor=1024,
-                ) as pbar,
-            ):
-                # iterating over the response content in chunks
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        file.write(chunk)
-
-                        # this updates the progress bar
-                        pbar.update(len(chunk))
-
-        # extract the file if requested
-        if extract:
-            # ensring that the path is a directory if the output path is a file
-            # this is necessary for extraction
-            extract_dir = output_path
-            if extract_dir.is_file():
-                extract_dir = output_path.parent
-
-            if output_path.suffix == ".gz":
-                # handle gzip files
-                extracted_path = output_path.with_suffix("")
-                with gzip.open(output_path, "rb") as f_in:
-                    with open(extracted_path, "wb") as f_out:
-                        f_out.write(f_in.read())
-                print(f"Extracted to: {extracted_path}")
-
-            elif output_path.suffix == ".zip":
-                # handle zip files
-                with zipfile.ZipFile(output_path, "r") as zip_ref:
-                    zip_ref.extractall(extract_dir)
-                print(f"Extracted to: {extract_dir}")
-
-            elif output_path.suffix in [".tar", ".tgz"] or ".tar." in output_path.name:
-                # handle tar files
-                with tarfile.open(output_path, "r:*") as tar_ref:
-                    tar_ref.extractall(extract_dir)
-                print(f"Extracted to: {extract_dir}")
-
-    # handling exceptions
-    except requests.exceptions.RequestException as e:
-        raise requests.exceptions.RequestException(f"Error downloading file: {e}")
-    except Exception as e:
-        raise Exception(f"Unexpected error: {e}")
-
 
 # ## Downloading data
 
 # Parameters used in this notebook
 
-# In[3]:
+# In[2]:
 
 
 # setting perturbation type
@@ -155,7 +33,7 @@ pert_type = "compound"
 
 # setting input and output paths
 
-# In[4]:
+# In[3]:
 
 
 # setting config path
@@ -187,7 +65,7 @@ cfret_dir.mkdir(exist_ok=True)
 #
 # For this notebook, we focus on plates containing both U2OS and A549 parental cell lines that have been treated with compounds for 48 hours. More information about the batch and plate metadata can be found in the [CPJUMP1 documentation](https://github.com/carpenter-singh-lab/2024_Chandrasekaran_NatureMethods/blob/main/README.md#batch-and-plate-metadata).
 
-# In[5]:
+# In[4]:
 
 
 # loading config file and setting experimental metadata URL
@@ -230,24 +108,23 @@ exp_metadata
 #
 # Specifically, we are downloading data that has already been normalized and feature-selected. The normalization and feature selection pipeline is available [here](https://github.com/WayScience/mitocheck_data/tree/main/3.normalize_data).
 
-# In[6]:
+# In[5]:
 
 
 # url source for the MitoCheck data
 mitocheck_url = nb_configs["links"]["MitoCheck-profiles-source"]
-output_path = mitocheck_dir / "mitocheck_profile.zip"
+save_path = (mitocheck_dir / "mitocheck_profile.parquet").resolve()
 
-# checking if the downloaded file already exists
-if output_path.exists():
-    print(f"File {output_path} already exists. Skipping download.")
+if save_path.exists():
+    print(f"File {save_path} already exists. Skipping download.")
 else:
-    # downloading mitocheck profiles
-    download_compressed_file(
-        source_url=mitocheck_url,
-        output_path=output_path,
-        chunk_size=8192,
-        extract=True,
-    )
+    # read and download mitocheck data
+    mitocheck_profile = pl.read_csv(mitocheck_url)
+    mitocheck_profile.write_parquet(save_path)
+
+    # display
+    print("shape: ", mitocheck_profile.shape)
+    mitocheck_profile.head()
 
 
 # ## Downloading CFReT Data
@@ -258,7 +135,7 @@ else:
 # - Only the processed single-cell profiles are downloaded [here](https://github.com/WayScience/cellpainting_predicts_cardiac_fibrosis/tree/main/3.process_cfret_features/data/single_cell_profiles)
 # - The CFReT dataset was used and published in [this study](https://doi.org/10.1161/CIRCULATIONAHA.124.071956).
 
-# In[7]:
+# In[6]:
 
 
 # setting the source for the CFReT data
@@ -269,12 +146,14 @@ output_path = (
     cfret_dir / "localhost230405150001_sc_feature_selected.parquet"
 ).resolve()
 
-# checking if the download already exists if it does not exist
-# download the file
+# check if it exists
 if output_path.exists():
     print(f"File {output_path} already exists. Skipping download.")
 else:
-    download_compressed_file(
-        source_url=cfret_source,
-        output_path=output_path,
-    )
+    # download cfret data
+    cfret_df = pl.read_parquet(cfret_source)
+    cfret_df.write_parquet(output_path)
+
+    # display
+    print("shape: ", cfret_df.shape)
+    cfret_df.head()
