@@ -4,7 +4,7 @@
 #
 # This notebook focuses on downloading metadata and single-cell profiles from three key datasets:
 #
-# 1. **CPJUMP1 Pilot Dataset** ([link](https://github.com/jump-cellpainting/2024_Chandrasekaran_NatureMethods_CPJUMP1)): Metadata is downloaded and processed to identify and organize plates containing wells treated with CRISPR perturbations for downstream analysis.
+# 1. **CPJUMP1 Pilot Dataset** ([link](https://github.com/jump-cellpainting/2024_Chandrasekaran_NatureMethods_CPJUMP1)): Metadata is downloaded and processed to identify and organize plates containing wells treated with compound perturbations for downstream analysis.
 # 2. **MitoCheck Dataset**: Normalized and feature-selected single-cell profiles are downloaded for further analysis.
 # 3. **CFReT Dataset**: Normalized and feature-selected single-cell profiles from the CFReT plate are downloaded for downstream analysis.
 
@@ -13,7 +13,6 @@
 
 import gzip
 import pathlib
-import pprint
 import sys
 import tarfile
 import zipfile
@@ -151,12 +150,12 @@ def download_compressed_file(
 
 # setting perturbation type
 # other options are "compound", "orf",
-pert_type = "crispr"
+pert_type = "compound"
 
 
 # setting input and output paths
 
-# In[5]:
+# In[4]:
 
 
 # setting config path
@@ -184,9 +183,11 @@ cfret_dir.mkdir(exist_ok=True)
 
 # ## Downloading CPJUMP1 Metadata
 #
-# In this section, we download and process the CPJUMP1 experimental metadata. This metadata contains information about assay plates, batches, and perturbation types, which is essential for organizing and analyzing single-cell profiles. Only plates treated with CRISPR perturbations are selected for downstream analysis.
+# In this section, we download the [experimental metadata](https://github.com/carpenter-singh-lab/2024_Chandrasekaran_NatureMethods/blob/main/benchmark/output/experiment-metadata.tsv) for the CPJUMP1 dataset. This metadata provides detailed information about each experimental batch, including plate barcodes, cell lines, perturbation types, and incubation times. Access to this metadata is essential for selecting and organizing the relevant subset of CPJUMP1 data for downstream analysis.
+#
+# For this notebook, we focus on plates containing both U2OS and A549 parental cell lines that have been treated with compounds for 48 hours. More information about the batch and plate metadata can be found in the [CPJUMP1 documentation](https://github.com/carpenter-singh-lab/2024_Chandrasekaran_NatureMethods/blob/main/README.md#batch-and-plate-metadata).
 
-# In[6]:
+# In[5]:
 
 
 # loading config file and setting experimental metadata URL
@@ -199,34 +200,28 @@ exp_metadata = pl.read_csv(
     CPJUMP1_exp_metadata_url, separator="\t", has_header=True, encoding="utf-8"
 )
 
-# filtering the metadata to only includes plates that their perturbation types are crispr
-exp_metadata = exp_metadata.filter(exp_metadata["Perturbation"].str.contains(pert_type))
+# apply a single filter to select only rows matching all criteria
+exp_metadata = exp_metadata.filter(
+    (
+        exp_metadata["Perturbation"].str.contains(pert_type)
+    )  # selecting based on pert type
+    & (exp_metadata["Time"] == 48)  # time of incubation with compound
+    & (
+        exp_metadata["Cell_type"].is_in(["U2OS", "A549"])
+    )  # selecting based on cell type
+    & (exp_metadata["Cell_line"] == "Parental")  # selecting only the parental cell line
+    & (pl.col("Batch") == "2020_11_04_CPJUMP1")  # selecting only the specified batch
+)
 
 # save the experimental metadata as a csv file
 exp_metadata.write_csv(exp_metadata_path)
 
 # display
+print(
+    "plates that will be downloaded are: ", exp_metadata["Assay_Plate_Barcode"].unique()
+)
+print("shape: ", exp_metadata.shape)
 exp_metadata
-
-
-# Creating a dictionary to group plates by their corresponding experimental batch
-#
-# This step organizes the plate barcodes from the experimental metadata into groups based on their batch. Grouping plates by batch is useful for batch-wise data processing and downstream analyses.
-
-# In[7]:
-
-
-# creating a dictionary for the batch and the associated plates with the a batch
-batch_plates_dict = {}
-exp_metadata_batches = exp_metadata["Batch"].unique().to_list()
-
-for batch in exp_metadata_batches:
-    batch_plates_dict[batch] = exp_metadata.filter(exp_metadata["Batch"] == batch)[
-        "Assay_Plate_Barcode"
-    ].to_list()
-
-# display batch (Keys) and plates (values) within each batch
-pprint.pprint(batch_plates_dict)
 
 
 # ## Downloading MitoCheck Data
@@ -235,7 +230,7 @@ pprint.pprint(batch_plates_dict)
 #
 # Specifically, we are downloading data that has already been normalized and feature-selected. The normalization and feature selection pipeline is available [here](https://github.com/WayScience/mitocheck_data/tree/main/3.normalize_data).
 
-# In[7]:
+# In[6]:
 
 
 # url source for the MitoCheck data
@@ -263,7 +258,7 @@ else:
 # - Only the processed single-cell profiles are downloaded [here](https://github.com/WayScience/cellpainting_predicts_cardiac_fibrosis/tree/main/3.process_cfret_features/data/single_cell_profiles)
 # - The CFReT dataset was used and published in [this study](https://doi.org/10.1161/CIRCULATIONAHA.124.071956).
 
-# In[8]:
+# In[7]:
 
 
 # setting the source for the CFReT data
