@@ -50,6 +50,10 @@ exp_metadata_path = (data_dir / "CPJUMP1-experimental-metadata.csv").resolve()
 profiles_dir = (data_dir / "sc-profiles").resolve()
 profiles_dir.mkdir(exist_ok=True)
 
+# create cpjump1 directory
+cpjump1_dir = (profiles_dir / "cpjump1").resolve()
+cpjump1_dir.mkdir(exist_ok=True)
+
 # create mitocheck directory
 mitocheck_dir = (profiles_dir / "mitocheck").resolve()
 mitocheck_dir.mkdir(exist_ok=True)
@@ -92,7 +96,7 @@ exp_metadata = exp_metadata.filter(
 )
 
 # save the experimental metadata as a csv file
-exp_metadata.write_csv(exp_metadata_path)
+exp_metadata.write_csv(cpjump1_dir / f"cpjump1_{pert_type}_experimental-metadata.csv")
 
 # display
 print(
