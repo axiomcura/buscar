@@ -110,7 +110,7 @@ def load_group_stratified_data(
 
 # Setting input and output paths
 
-# In[ ]:
+# In[3]:
 
 
 # setting data path
