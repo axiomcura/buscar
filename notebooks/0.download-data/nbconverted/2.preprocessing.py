@@ -200,7 +200,6 @@ mitocheck_compressed_profiles_dir = (
     profiles_dir / "mitocheck" / "normalized_data"
 ).resolve(strict=True)
 
-
 # output directories
 cpjump1_output_dir = (profiles_dir / "cpjump1").resolve()
 cpjump1_output_dir.mkdir(exist_ok=True)
@@ -244,7 +243,7 @@ shared_features = loaded_shared_features["shared-features"]
 # - Data integrity is maintained during the merge operation
 # - Adding a unique cell id has column `Metadata_cell_id`
 
-# We are loading per-plate parquet profiles for compound-treated plates, selecting the shared feature set, concatenating them into a single Polars DataFrame while preserving metadata, and adding a unique Metadata_cell_id for each cell. The resulting cpjump1_profiles table is ready for downstream analysis.
+# In[5]:
 
 # In[5]:
 
@@ -314,7 +313,7 @@ cpjump1_profiles.select(meta_cols + features_cols).write_parquet(concat_output_p
 #
 # The preprocessing ensures that all MitoCheck datasets share a common feature space and are ready for comparative analysis with CPJUMP1 profiles.
 
-# In[7]:
+# In[6]:
 
 
 # load in mitocheck profiles and save as parquet
@@ -358,7 +357,7 @@ mitocheck_pos_control_profiles = mitocheck_pos_control_profiles.with_columns(
 
 # Filter Cell Profiler (CP) features and preprocess columns by removing the "CP__" prefix to standardize feature names for downstream analysis.
 
-# In[8]:
+# In[7]:
 
 
 # Split profiles to only retain cell profiler features
@@ -381,7 +380,7 @@ cp_mitocheck_pos_control_profiles = remove_feature_prefixes(
 
 # Splitting the metadata and feature columns for each dataset to enable targeted downstream analysis and ensure consistent data structure across all profiles.
 
-# In[9]:
+# In[8]:
 
 
 # manually selecting metadata features that are present across all 3 profiles
@@ -430,7 +429,7 @@ with open(mitocheck_dir / "mitocheck_feature_space_configs.json", "w") as f:
     )
 
 
-# In[10]:
+# In[9]:
 
 
 # create concatenated mitocheck profiles
@@ -468,7 +467,7 @@ concat_mitocheck_profiles.write_parquet(
 # - **Unique cell identification**: Adding `Metadata_cell_id` column with unique hash values based on all profile features to enable precise cell tracking and deduplication
 #
 
-# In[11]:
+# In[10]:
 
 
 # load in cfret profiles and add a unique cell ID
