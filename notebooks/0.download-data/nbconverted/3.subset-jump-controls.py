@@ -123,7 +123,7 @@ download_module_results_dir = pathlib.Path("../0.download-data/results").resolve
 profiles_dir = (data_dir / "sc-profiles").resolve(strict=True)
 
 cpjump1_data_path = (
-    profiles_dir / "cpjump1" / "cpjump1_crispr_concat_profiles.parquet"
+    profiles_dir / "cpjump1" / "cpjump1_compound_concat_profiles.parquet"
 ).resolve(strict=True)
 
 
