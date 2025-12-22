@@ -15,7 +15,7 @@
 #
 # These preprocessing steps ensure that all datasets are standardized, well-documented, and ready for comparative and integrative analyses.
 
-# In[5]:
+# In[1]:
 
 
 import json
@@ -26,12 +26,13 @@ import polars as pl
 
 sys.path.append("../../")
 from utils.data_utils import add_cell_id_hash, split_meta_and_features
+from utils.io_utils import load_profiles
 
 # ## Helper functions
 #
 # Contains helper function that pertains to this notebook.
 
-# In[6]:
+# In[2]:
 
 
 def load_and_concat_profiles(
@@ -71,15 +72,6 @@ def load_and_concat_profiles(
                 "All elements in specific_plates must be pathlib.Path objects"
             )
 
-    def load_profile(file: pathlib.Path) -> pl.DataFrame:
-        """internal function to load a single profile file."""
-        profile_df = pl.read_parquet(file)
-        meta_cols, _ = split_meta_and_features(profile_df)
-        if shared_features is not None:
-            # Only select metadata and shared features
-            return profile_df.select(meta_cols + shared_features)
-        return profile_df
-
     # Use specific_plates if provided, otherwise gather all .parquet files
     if specific_plates is not None:
         # Validate that all specific plate files exist
@@ -93,7 +85,9 @@ def load_and_concat_profiles(
             raise FileNotFoundError(f"No profile files found in {profile_dir}")
 
     # Load and concatenate profiles
-    loaded_profiles = [load_profile(f) for f in files_to_load]
+    loaded_profiles = [
+        load_profiles(f, shared_features=shared_features) for f in files_to_load
+    ]
 
     # Concatenate all loaded profiles
     return pl.concat(loaded_profiles, rechunk=True)
@@ -164,7 +158,7 @@ def remove_feature_prefixes(df: pl.DataFrame, prefix: str = "CP__") -> pl.DataFr
 #
 # > **Note:** The shared profiles utilized here are sourced from the [JUMP-single-cell](https://github.com/WayScience/JUMP-single-cell) repository. All preprocessing and profile generation steps are performed in that repository, and this notebook focuses on downstream analysis using the generated profiles.
 
-# In[7]:
+# In[3]:
 
 
 # Setting data directory
@@ -211,7 +205,7 @@ results_dir.mkdir(exist_ok=True)
 
 # Create a list of paths that only points compound treated plates and load the shared features config file that can be found in this [repo](https://github.com/WayScience/JUMP-single-cell)
 
-# In[8]:
+# In[4]:
 
 
 # Load experimental metadata
@@ -245,7 +239,7 @@ shared_features = loaded_shared_features["shared-features"]
 
 # We are loading per-plate parquet profiles for compound-treated plates, selecting the shared feature set, concatenating them into a single Polars DataFrame while preserving metadata, and adding a unique Metadata_cell_id for each cell. The resulting cpjump1_profiles table is ready for downstream analysis.
 
-# In[9]:
+# In[5]:
 
 
 # Loading compound profiles with shared features and concat into a single DataFrame
@@ -267,7 +261,7 @@ cpjump1_profiles = add_cell_id_hash(cpjump1_profiles)
 # Next we annotate the compound treatments in the CPJUMP1 dataset, we annotate each cell with Mechanism of Action (MoA) information using the [Clue Drug Repurposing Hub](https://clue.io/data/REP#REP). This resource provides comprehensive drug and tool compound annotations, including target information and clinical development status.
 #
 
-# In[10]:
+# In[6]:
 
 
 # load drug repurposing moa file and add prefix to metadata columns
@@ -318,7 +312,7 @@ cpjump1_profiles.select(meta_cols + features_cols).write_parquet(concat_output_p
 #
 # The preprocessing ensures that all MitoCheck datasets share a common feature space and are ready for comparative analysis with CPJUMP1 profiles.
 
-# In[11]:
+# In[7]:
 
 
 # load in mitocheck profiles and save as parquet
@@ -362,7 +356,7 @@ mitocheck_pos_control_profiles = mitocheck_pos_control_profiles.with_columns(
 
 # Filter Cell Profiler (CP) features and preprocess columns by removing the "CP__" prefix to standardize feature names for downstream analysis.
 
-# In[12]:
+# In[8]:
 
 
 # Split profiles to only retain cell profiler features
@@ -385,7 +379,7 @@ cp_mitocheck_pos_control_profiles = remove_feature_prefixes(
 
 # Splitting the metadata and feature columns for each dataset to enable targeted downstream analysis and ensure consistent data structure across all profiles.
 
-# In[13]:
+# In[9]:
 
 
 # manually selecting metadata features that are present across all 3 profiles
@@ -434,7 +428,7 @@ with open(mitocheck_dir / "mitocheck_feature_space_configs.json", "w") as f:
     )
 
 
-# In[14]:
+# In[10]:
 
 
 # create concatenated mitocheck profiles
@@ -472,7 +466,7 @@ concat_mitocheck_profiles.write_parquet(
 # - **Unique cell identification**: Adding `Metadata_cell_id` column with unique hash values based on all profile features to enable precise cell tracking and deduplication
 #
 
-# In[15]:
+# In[11]:
 
 
 # load in cfret profiles and add a unique cell ID
