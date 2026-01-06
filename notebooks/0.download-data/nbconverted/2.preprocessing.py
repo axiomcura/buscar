@@ -258,7 +258,7 @@ cpjump1_profiles = load_and_concat_profiles(
 cpjump1_profiles = add_cell_id_hash(cpjump1_profiles)
 
 
-# Next we annotate the compound treatments in the CPJUMP1 dataset, we annotate each cell with Mechanism of Action (MoA) information using the [Clue Drug Repurposing Hub](https://clue.io/data/REP#REP). This resource provides comprehensive drug and tool compound annotations, including target information and clinical development status.
+# Next, we annotate the compound treatments in the CPJUMP1 dataset. We annotate each cell with Mechanism of Action (MoA) information using the [Clue Drug Repurposing Hub](https://clue.io/data/REP#REP). This resource provides comprehensive drug and tool compound annotations, including target information and clinical development status.
 #
 
 # In[6]:
