@@ -8,6 +8,7 @@ as well as for saving, loading, and writing files.
 import hashlib
 from collections import defaultdict
 
+import numpy as np
 import pandas as pd
 import polars as pl
 from pycytominer.cyto_utils import infer_cp_features
@@ -616,3 +617,53 @@ def add_cell_id_hash(
     return profiles.with_columns(hash_column).select(
         ["Metadata_cell_id"] + profiles.columns
     )
+
+
+def shuffle_profiles(
+    profiles: pl.DataFrame, feature_cols: list[str], seed: int = 42
+) -> pl.DataFrame:
+    """
+    Create a shuffled version of the dataset where each morphological feature
+    column is independently shuffled (values permuted within each column).
+
+    This breaks the correlation structure between features while preserving
+    the marginal distributions, creating a null baseline for comparison.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Original dataframe with features and metadata
+    feature_cols : list[str]
+        List of morphological feature column names to shuffle
+    seed : int
+        Random seed for reproducibility
+
+    Returns
+    -------
+    pl.DataFrame
+        Shuffled dataframe with same structure but permuted feature values
+    """
+    np.random.seed(seed)
+
+    # Get metadata columns (everything not in feature_cols)
+    meta_cols = [c for c in profiles.columns if c not in feature_cols]
+
+    # Create shuffled feature columns
+    shuffled_features = {}
+    for col in feature_cols:
+        # Make a copy since Polars returns read-only arrays
+        values = profiles[col].to_numpy().copy()
+        np.random.shuffle(values)  # In-place shuffle
+        shuffled_features[col] = values
+
+    # Build the shuffled dataframe
+    # Start with metadata columns
+    shuffled_df = profiles.select(meta_cols)
+
+    # Add shuffled feature columns
+    for col in feature_cols:
+        shuffled_df = shuffled_df.with_columns(
+            pl.Series(name=col, values=shuffled_features[col])
+        )
+
+    return shuffled_df
