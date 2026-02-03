@@ -6,7 +6,7 @@
 #
 # We assess Buscar's performance by calculating precision and recall for each MoA, and visualizing the results with waterfall plots. Ideally, treatments with the same MoA should have relatively low Buscar scores, indicating strong similarity in their biological effects.
 
-# In[ ]:
+# In[1]:
 
 
 import pathlib
@@ -23,7 +23,7 @@ from utils.io_utils import load_configs
 
 # Setting input and output directories
 
-# In[ ]:
+# In[2]:
 
 
 # setting directories
@@ -69,7 +69,7 @@ moa_analysis_output_dir = (plot_dir / "moa_analysis").resolve()
 moa_analysis_output_dir.mkdir(parents=True, exist_ok=True)
 
 
-# In[ ]:
+# In[3]:
 
 
 # load moa annotations
@@ -94,7 +94,7 @@ moa_rankings = load_configs(cpjump1_moa_rankings)
 
 # Formatting dataset by calculating the mean buscar score for each treatment across all iterations.
 
-# In[ ]:
+# In[4]:
 
 
 # Extract original and shuffled scores
@@ -159,7 +159,7 @@ moa_mean_buscar_scores
 #
 # In this section we are plotting the precision and recall scores of bucsar rranking of compounds.
 
-# In[ ]:
+# In[5]:
 
 
 # Prepare data for PR curves per MoA
@@ -217,7 +217,7 @@ for moa in unique_moas:
         )
 
 
-# In[ ]:
+# In[6]:
 
 
 # Create faceted PR curve plot
@@ -290,7 +290,7 @@ plt.show()
 #
 # We will now create waterfall plots to visualize how the buscar scores rank compounds for each mechanism of action (MoA). For a given MoA (e.g., sodium channel blocker), compounds sharing that MoA should ideally have lower buscar scores (appearing further to the left in the plot), indicating stronger similarity to the reference. This visualization helps assess whether compounds with the same MoA are ranked more favorably by the buscar scoring method.
 
-# In[ ]:
+# In[7]:
 
 
 # Set plot parameters
@@ -462,7 +462,7 @@ plt.rcParams.update(plt.rcParamsDefault)
 
 # Next is to generate waterfall plot for shuffle data
 
-# In[ ]:
+# In[8]:
 
 
 # Create publication-quality waterfall plots with SHUFFLED buscar scores per treatment for each MoA
@@ -624,7 +624,7 @@ plt.suptitle(
 
 # Save high-quality figures
 plt.savefig(
-    moa_analysis_output_dir / "waterfall_shuffled_buscar_scores_publication.png",
+    plot_dir / "waterfall_shuffled_buscar_scores_publication.png",
     dpi=400,
     bbox_inches="tight",
     facecolor="white",
@@ -635,6 +635,3 @@ plt.show()
 
 # Reset matplotlib parameters to defaults
 plt.rcParams.update(plt.rcParamsDefault)
-
-
-# In[ ]:
