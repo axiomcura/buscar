@@ -116,7 +116,6 @@ def apply_pca(
             pl.DataFrame(
                 principal_components, schema=pca_colnames
             ),  # PCA components df
-            explained_variance_df,  # explained variance df
         ],
         how="horizontal",
     ), explained_variance_df
