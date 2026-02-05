@@ -7,6 +7,7 @@ suppressPackageStartupMessages({
     library(patchwork)
     library(scales)
     library(umap)
+    library(RColorBrewer)
 })
 
 
@@ -47,11 +48,9 @@ theme_set(
     )
 )
 
-# color pallete
-color_palette <- c(
-    "DMSO" = "#66c2a5",
-    "TGFRi" = "#fc8d62"
-)
+# color palette - using Dark2 from RColorBrewer
+# Get the number of unique cell_treatment combinations
+color_palette <- brewer.pal(8, "Dark2")
 
 # Define directory paths
 module_results_dir <- file.path("..", "results")
@@ -64,8 +63,17 @@ umap_dir <- file.path(module_results_dir, "umap")
 # PCA file paths
 pca_on_path <- file.path(pca_dir, "cfret_pilot_on_morph_pca.parquet")
 pca_off_path <- file.path(pca_dir, "cfret_pilot_off_morph_pca.parquet")
+pca_on_var_exp_path <- file.path(pca_dir, "cfret_pilot_on_morph_pca_var_explained.parquet")
+pca_off_var_exp_path <- file.path(pca_dir, "cfret_pilot_off_morph_pca_var_explained.parquet")
+
+# check if these files exist
+if (!file.exists(pca_on_path)) stop("PCA on-target file not found")
+if (!file.exists(pca_off_path)) stop("PCA off-target file not found")
+if (!file.exists(pca_on_var_exp_path)) stop("PCA on-target explained variance file not found")
+if (!file.exists(pca_off_var_exp_path)) stop("PCA off-target explained variance file not found")
 
 # UMAP file paths
+umap_global_path <- file.path(umap_dir, "cfret_pilot_all_morph_umap.parquet")
 umap_on_path <- file.path(umap_dir, "cfret_pilot_on_morph_umap.parquet")
 umap_off_path <- file.path(umap_dir, "cfret_pilot_off_morph_umap.parquet")
 
@@ -83,6 +91,15 @@ cat("Figures directory created at:", figures_dir, "\n")
 # Load PCA results
 pca_on_df <- read_parquet(pca_on_path)
 pca_off_df <- read_parquet(pca_off_path)
+pca_on_var_exp_df <- read_parquet(pca_on_var_exp_path)
+pca_off_var_exp_df <- read_parquet(pca_off_var_exp_path)
+
+# creating a new column that contains the cell_type and treatment info concatenated
+# with an underscore
+pca_on_df <- pca_on_df %>%
+    mutate(Metadata_cell_treatment = paste(Metadata_cell_type, Metadata_treatment, sep = "_"))
+pca_off_df <- pca_off_df %>%
+    mutate(Metadata_cell_treatment = paste(Metadata_cell_type, Metadata_treatment, sep = "_"))
 
 # Display structure
 cat("PCA ON shape:", nrow(pca_on_df), "×", ncol(pca_on_df), "\n")
@@ -124,25 +141,31 @@ legend_size <- 3
 # Resolution for rendering
 render_dpi <- 300
 
+# Extract variance explained values for axis labels
+pc1_var_on <- pca_on_var_exp_df %>% filter(PC == "PC1") %>% pull(Metadata_explained_variance_ratio) * 100
+pc2_var_on <- pca_on_var_exp_df %>% filter(PC == "PC2") %>% pull(Metadata_explained_variance_ratio) * 100
+pc1_var_off <- pca_off_var_exp_df %>% filter(PC == "PC1") %>% pull(Metadata_explained_variance_ratio) * 100
+pc2_var_off <- pca_off_var_exp_df %>% filter(PC == "PC2") %>% pull(Metadata_explained_variance_ratio) * 100
+
 # Create on-target PCA plot
-plot_pca_on <- ggplot(pca_on_df, aes(x = PC1, y = PC2, color = Metadata_treatment)) +
+plot_pca_on <- ggplot(pca_on_df, aes(x = PC1, y = PC2, color = Metadata_cell_treatment)) +
     geom_point(alpha = point_alpha, size = point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     labs(
         title = "On-target morphological signature",
-        x = "PC1",
-        y = "PC2"
+        x = sprintf("PC1 (%.1f%%)", pc1_var_on),
+        y = sprintf("PC2 (%.1f%%)", pc2_var_on)
     ) +
     guides(color = guide_legend(override.aes = list(alpha = legend_alpha, size = legend_size)))
 
 # Create off-target PCA plot
-plot_pca_off <- ggplot(pca_off_df, aes(x = PC1, y = PC2, color = Metadata_treatment)) +
+plot_pca_off <- ggplot(pca_off_df, aes(x = PC1, y = PC2, color = Metadata_cell_treatment)) +
     geom_point(alpha = point_alpha, size = point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     labs(
         title = "Off-target morphological signature",
-        x = "PC1",
-        y = "PC2"
+        x = sprintf("PC1 (%.1f%%)", pc1_var_off),
+        y = sprintf("PC2 (%.1f%%)", pc2_var_off)
     ) +
     guides(color = guide_legend(override.aes = list(alpha = legend_alpha, size = legend_size)))
 
@@ -172,20 +195,19 @@ cat("Saved PCA overlay plots to:", figures_dir, "\n")
 
 # Prepare data for faceting
 pca_on_df_facet <- pca_on_df %>%
-    mutate(signature_type = "On-Target")
+    mutate(signature_type = sprintf("On-Target (PC1: %.1f%%, PC2: %.1f%%)", pc1_var_on, pc2_var_on))
 
 pca_off_df_facet <- pca_off_df %>%
-    mutate(signature_type = "Off-Target")
+    mutate(signature_type = sprintf("Off-Target (PC1: %.1f%%, PC2: %.1f%%)", pc1_var_off, pc2_var_off))
 
 # Create faceted PCA plot
 pca_faceted <- bind_rows(pca_on_df_facet, pca_off_df_facet) %>%
     mutate(
-        signature_type = factor(signature_type, levels = c("On-Target", "Off-Target")),
         Metadata_treatment = factor(Metadata_treatment, levels = c("DMSO", "TGFRi"))
     ) %>%
-    ggplot(aes(x = PC1, y = PC2, color = Metadata_treatment)) +
+    ggplot(aes(x = PC1, y = PC2, color = Metadata_cell_treatment)) +
     geom_point(alpha = facet_point_alpha, size = facet_point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     facet_grid(signature_type ~ Metadata_treatment) +
     labs(
         title = "PCA analysis: treatment-specific distributions",
@@ -218,6 +240,12 @@ cat("Saved PCA faceted plots to:", figures_dir, "\n")
 umap_on_df <- read_parquet(umap_on_path)
 umap_off_df <- read_parquet(umap_off_path)
 
+# Create cell_treatment column
+umap_on_df <- umap_on_df %>%
+    mutate(Metadata_cell_treatment = paste(Metadata_cell_type, Metadata_treatment, sep = "_"))
+umap_off_df <- umap_off_df %>%
+    mutate(Metadata_cell_treatment = paste(Metadata_cell_type, Metadata_treatment, sep = "_"))
+
 # Display structure
 cat("UMAP ON shape:", nrow(umap_on_df), "×", ncol(umap_on_df), "\n")
 cat("UMAP OFF shape:", nrow(umap_off_df), "×", ncol(umap_off_df), "\n")
@@ -239,9 +267,9 @@ if (!all(required_umap_cols %in% names(umap_on_df))) {
 cat("\nUMAP data loaded successfully\n")
 
 # Create on-target UMAP plot
-plot_umap_on <- ggplot(umap_on_df, aes(x = UMAP1, y = UMAP2, color = Metadata_treatment)) +
+plot_umap_on <- ggplot(umap_on_df, aes(x = UMAP1, y = UMAP2, color = Metadata_cell_treatment)) +
     geom_point(alpha = point_alpha, size = point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     labs(
         title = "On-target morphological signature",
         x = "UMAP 1",
@@ -250,9 +278,9 @@ plot_umap_on <- ggplot(umap_on_df, aes(x = UMAP1, y = UMAP2, color = Metadata_tr
     guides(color = guide_legend(override.aes = list(alpha = legend_alpha, size = legend_size)))
 
 # Create off-target UMAP plot
-plot_umap_off <- ggplot(umap_off_df, aes(x = UMAP1, y = UMAP2, color = Metadata_treatment)) +
+plot_umap_off <- ggplot(umap_off_df, aes(x = UMAP1, y = UMAP2, color = Metadata_cell_treatment)) +
     geom_point(alpha = point_alpha, size = point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     labs(
         title = "Off-target morphological signature",
         x = "UMAP 1",
@@ -296,9 +324,9 @@ umap_faceted <- bind_rows(umap_on_df_facet, umap_off_df_facet) %>%
         signature_type = factor(signature_type, levels = c("On-Target", "Off-Target")),
         Metadata_treatment = factor(Metadata_treatment, levels = c("DMSO", "TGFRi"))
     ) %>%
-    ggplot(aes(x = UMAP1, y = UMAP2, color = Metadata_treatment)) +
+    ggplot(aes(x = UMAP1, y = UMAP2, color = Metadata_cell_treatment)) +
     geom_point(alpha = facet_point_alpha, size = facet_point_size, shape = point_shape) +
-    scale_color_manual(values = color_palette, name = "Treatment") +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
     facet_grid(signature_type ~ Metadata_treatment) +
     labs(
         title = "UMAP analysis: treatment-specific distributions",
