@@ -7,6 +7,7 @@ as well as for saving, loading, and writing files.
 
 import hashlib
 from collections import defaultdict
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -619,8 +620,11 @@ def add_cell_id_hash(
     )
 
 
-def shuffle_profiles(
-    profiles: pl.DataFrame, feature_cols: list[str], seed: int = 42
+def shuffle_feature_profiles(
+    profiles: pl.DataFrame,
+    feature_cols: list[str],
+    method: Literal["row", "column"] = "row",
+    seed: int = 42,
 ) -> pl.DataFrame:
     """
     Create a shuffled version of the dataset where each morphological feature
@@ -631,10 +635,13 @@ def shuffle_profiles(
 
     Parameters
     ----------
-    df : pl.DataFrame
+    profiles : pl.DataFrame
         Original dataframe with features and metadata
     feature_cols : list[str]
         List of morphological feature column names to shuffle
+    method : str, optional
+        Method of shuffling: "row" (shuffle rows) or "column" (shuffle each column
+        independently), by default "row"
     seed : int
         Random seed for reproducibility
 
@@ -647,23 +654,34 @@ def shuffle_profiles(
 
     # Get metadata columns (everything not in feature_cols)
     meta_cols = [c for c in profiles.columns if c not in feature_cols]
+    metadata_df = profiles.select(meta_cols)
 
     # Create shuffled feature columns
-    shuffled_features = {}
-    for col in feature_cols:
-        # Make a copy since Polars returns read-only arrays
-        values = profiles[col].to_numpy().copy()
-        np.random.shuffle(values)  # In-place shuffle
-        shuffled_features[col] = values
-
-    # Build the shuffled dataframe
-    # Start with metadata columns
-    shuffled_df = profiles.select(meta_cols)
-
-    # Add shuffled feature columns
-    for col in feature_cols:
-        shuffled_df = shuffled_df.with_columns(
-            pl.Series(name=col, values=shuffled_features[col])
+    if method == "row":
+        return pl.concat(
+            [
+                metadata_df,
+                profiles.select(feature_cols).sample(
+                    fraction=1.0, seed=seed, shuffle=True
+                ),
+            ],
+            how="horizontal",
         )
 
-    return shuffled_df
+    # column-wise shuffling
+    elif method == "column":
+        shuffled_features = {}
+        for col in feature_cols:
+            values = profiles[col].to_numpy().copy()
+            np.random.shuffle(values)
+            shuffled_features[col] = values
+
+        # Build the shuffled dataframe
+        shuffled_df = profiles.select(meta_cols)
+        for col in feature_cols:
+            shuffled_df = shuffled_df.with_columns(
+                pl.Series(name=col, values=shuffled_features[col])
+            )
+        return shuffled_df
+    else:
+        raise ValueError(f"Unknown shuffle method: {method}")

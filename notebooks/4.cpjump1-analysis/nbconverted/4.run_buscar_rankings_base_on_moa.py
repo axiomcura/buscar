@@ -13,7 +13,7 @@ import polars as pl
 from tqdm import tqdm
 
 sys.path.append("../../")
-from utils.data_utils import shuffle_profiles, split_meta_and_features
+from utils.data_utils import shuffle_feature_profiles, split_meta_and_features
 from utils.identify_hits import identify_compound_hit
 from utils.io_utils import load_configs, load_profiles
 from utils.metrics import measure_phenotypic_activity
@@ -169,7 +169,7 @@ cpjump1_df.head()
 
 # Generate a shuffled baseline dataset
 
-# In[6]:
+# In[ ]:
 
 
 # create a subsetted dataframe for faster testing (optional)
@@ -189,7 +189,7 @@ cpjump1_df.head()
 # ----------------------------------------------------------------
 
 # Create the shuffled baseline dataset
-cpjump1_df_shuffled = shuffle_profiles(cpjump1_df, shared_features, seed=42)
+cpjump1_df_shuffled = shuffle_feature_profiles(cpjump1_df, shared_features, seed=42)
 
 
 # In[7]:
@@ -291,7 +291,7 @@ else:
 logger.info("Logger initialized for Buscar MoA analysis.")
 
 
-# In[12]:
+# In[ ]:
 
 
 # Run Buscar analysis for each treatment in both original and shuffled datasets
@@ -300,7 +300,7 @@ scores = {
     "shuffled": {},
 }  # store results here with dataset_type as top-level key
 for dataset_type, cpjump1_df_to_use in {
-    # "original": cpjump1_df,
+    "original": cpjump1_df,
     "shuffled": cpjump1_df_shuffled,
 }.items():
     logger.info(f"Starting analysis for dataset: {dataset_type}")
@@ -431,3 +431,6 @@ for dataset_type, cpjump1_df_to_use in {
             logger.info(
                 f"Saved results for treatment: {treatment}, iteration: {n_iter}, dataset: {dataset_type}"
             )
+
+
+# In[ ]:

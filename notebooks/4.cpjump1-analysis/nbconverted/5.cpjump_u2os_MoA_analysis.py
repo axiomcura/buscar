@@ -6,7 +6,7 @@
 #
 # We assess Buscar's performance by calculating precision and recall for each MoA, and visualizing the results with waterfall plots. Ideally, treatments with the same MoA should have relatively low Buscar scores, indicating strong similarity in their biological effects.
 
-# In[1]:
+# In[7]:
 
 
 import pathlib
@@ -23,7 +23,7 @@ from utils.io_utils import load_configs
 
 # Setting input and output directories
 
-# In[2]:
+# In[8]:
 
 
 # setting directories
@@ -69,7 +69,7 @@ moa_analysis_output_dir = (plot_dir / "moa_analysis").resolve()
 moa_analysis_output_dir.mkdir(parents=True, exist_ok=True)
 
 
-# In[3]:
+# In[9]:
 
 
 # load moa annotations
@@ -94,7 +94,7 @@ moa_rankings = load_configs(cpjump1_moa_rankings)
 
 # Formatting dataset by calculating the mean buscar score for each treatment across all iterations.
 
-# In[4]:
+# In[10]:
 
 
 # Extract original and shuffled scores
