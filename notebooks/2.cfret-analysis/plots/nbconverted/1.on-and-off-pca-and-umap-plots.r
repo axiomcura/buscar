@@ -7,6 +7,8 @@ suppressPackageStartupMessages({
     library(patchwork)
     library(scales)
     library(umap)
+    library(magick)
+    library(dplyr)
     library(RColorBrewer)
 })
 
@@ -354,3 +356,79 @@ ggsave(
 )
 
 cat("Saved UMAP faceted plots to:", figures_dir, "\n")
+
+# Prepare combined data with signature type for faceting
+umap_on_contour_df <- umap_on_df %>% mutate(signature_type = "On-Target")
+umap_off_contour_df <- umap_off_df %>% mutate(signature_type = "Off-Target")
+
+umap_contour_df <- bind_rows(umap_on_contour_df, umap_off_contour_df) %>%
+    mutate(
+        signature_type = factor(signature_type, levels = c("On-Target", "Off-Target"))
+    )
+
+# Faceted contour plot: signature_type (columns) x cell_treatment (rows)
+umap_contour_combined <- ggplot(umap_contour_df, aes(x = UMAP1, y = UMAP2, color = Metadata_cell_treatment)) +
+    geom_point(alpha = 0.1, size = 1, shape = point_shape) +
+    geom_density_2d(linewidth = 0.8, bins = 12) +
+    scale_color_manual(values = color_palette, name = "Cell Treatment") +
+    facet_grid(Metadata_cell_treatment ~ signature_type, scales = "free") +
+    labs(
+        title = "UMAP KDE contour analysis: morphological signature",
+        x = "UMAP 1",
+        y = "UMAP 2"
+    ) +
+    guides(color = guide_legend(override.aes = list(alpha = 1, size = 2, linewidth = 1))) +
+    theme(
+        strip.text = element_text(face = "bold", size = 11),
+        panel.spacing = unit(1, "lines")
+    )
+
+# Display plot
+options(repr.plot.width = 12, repr.plot.height = 12, repr.plot.res = render_dpi)
+
+# Save UMAP KDE contour plot
+ggsave(
+    filename = file.path(figures_dir, "umap_kde_contour_faceted.png"),
+    plot = umap_contour_combined,
+    width = plot_width_faceted,
+    height = plot_height_faceted,
+    dpi = render_dpi,
+    bg = "white"
+)
+umap_contour_combined
+
+# Define the order of treatments
+treatment_order <- c("failing_DMSO", "failing_TGFRi", "healthy_DMSO", "healthy_TGFRi")
+
+# Extract axis limits from the static plot
+xlim_vals <- ggplot_build(umap_contour_combined)$layout$panel_params[[1]]$x.range
+ylim_vals <- ggplot_build(umap_contour_combined)$layout$panel_params[[1]]$y.range
+
+plot_list <- list()
+
+for (treat in treatment_order) {
+  df_sub <- umap_contour_df %>% filter(Metadata_cell_treatment == treat)
+  p <- ggplot(df_sub, aes(x = UMAP1, y = UMAP2, color = signature_type)) +
+    geom_point(alpha = 0.1, size = 1, shape = point_shape) +
+    geom_density_2d(linewidth = 0.8, bins = 12) +
+    scale_color_manual(values = c("On-Target" = "#1b9e77", "Off-Target" = "#d95f02")) +
+    facet_grid(. ~ signature_type) +
+    labs(
+      title = paste("UMAP KDE contour:", treat),
+      x = "UMAP 1",
+      y = "UMAP 2"
+    ) +
+    xlim(xlim_vals) +
+    ylim(ylim_vals) +
+    theme(
+      strip.text = element_text(face = "bold", size = 11),
+      panel.spacing = unit(1, "lines")
+    )
+  fname <- paste0("tmp_", treat, ".png")
+  ggsave(fname, plot = p, width = 12, height = 6, dpi = 300, bg = "white")
+  plot_list[[treat]] <- image_read(fname)
+}
+
+gif <- image_animate(image_join(plot_list), fps = 1)
+image_write(gif, path = file.path(figures_dir, "umap_kde_contour_by_treatment.gif"))
+file.remove(paste0("tmp_", treatment_order, ".png"))
