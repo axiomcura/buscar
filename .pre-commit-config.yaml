@@ -35,7 +35,11 @@ repos:
         args: ["--profile", "black"]
 
   # Ruff for linting and formatting Python files
+<<<<<<< pca-umap-cfret-update
   - repo: https://github.com/astral-sh/ruff-pre-commit
+=======
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+>>>>>>> main
     rev: v0.15.0
     hooks:
       - id: ruff-check
