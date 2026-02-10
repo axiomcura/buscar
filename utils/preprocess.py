@@ -21,7 +21,7 @@ def apply_pca(
     standardize=False,
     random_state=0,
     **kwargs,
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Apply PCA to the morphological features of the profiles DataFrame.
 
     Parameters
@@ -98,6 +98,16 @@ def apply_pca(
     )
     principal_components = pca.fit_transform(data_scaled)
 
+    # store explained variance ratio in a dictionary
+    explained_variance_df = pl.DataFrame(
+        {
+            "PC": [f"PC{i + 1}" for i in range(len(pca.explained_variance_ratio_))],
+            "Metadata_explained_variance": pca.explained_variance_,
+            "Metadata_explained_variance_ratio": pca.explained_variance_ratio_,
+            "Metadata_cumulative_explained_variance_ratio": pca.explained_variance_ratio_.cumsum(),
+        }
+    )
+
     # concat metadata infromation with principal components
     pca_colnames = [f"PC{i + 1}" for i in range(principal_components.shape[1])]
     return pl.concat(
@@ -108,7 +118,7 @@ def apply_pca(
             ),  # PCA components df
         ],
         how="horizontal",
-    )
+    ), explained_variance_df
 
 
 @beartype

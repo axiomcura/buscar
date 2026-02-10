@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 
-# In[15]:
+# # 4.Generate PCA and UMAP embeddings for CFReT single-cell data
+#
+# In this notebook we are create PCA and UMAP embeddings for the single-cell CFReT dataset.
+
+# In[1]:
 
 
 import pathlib
@@ -15,7 +19,7 @@ from utils.preprocess import apply_pca, apply_umap
 
 # Setting input and output paths
 
-# In[16]:
+# In[2]:
 
 
 # setting results path
@@ -47,7 +51,7 @@ plots_dir = (results_dir / "plots").resolve()
 plots_dir.mkdir(exist_ok=True)
 
 
-# In[17]:
+# In[3]:
 
 
 # loading profiles and signatures
@@ -62,15 +66,19 @@ cfret_profiles_df = cfret_profiles_df.filter(
 cfret_meta, cfret_feats = split_meta_and_features(cfret_profiles_df)
 
 
-# In[20]:
+# In[4]:
 
 
-# count cells within Metadata_treatment
-cell_count_df = cfret_profiles_df.group_by("Metadata_treatment").len()
+# count number of cell per cell and treatment condition
+cell_count_df = cfret_profiles_df.group_by(
+    "Metadata_cell_type", "Metadata_treatment"
+).len()
+
+print("Number of cells per cell type and treatment condition:")
 cell_count_df
 
 
-# In[24]:
+# In[5]:
 
 
 # separate on and off morpholgoical profiles
@@ -80,43 +88,67 @@ on_profiles_df = cfret_profiles_df.select(cfret_meta + on_sigsnature_feats)
 off_profiles_df = cfret_profiles_df.select(cfret_meta + off_signature_feats)
 
 
-# Apply PCA to both on and off profiles
+# In this section, we compute PCA embeddings separately for two distinct morphological signature sets:
+# - **On-morphology signatures**: Features associated with TGFRi-induced morphological changes
+# - **Off-morphology signatures**: Features representing baseline morphology state
+#
+# Each PCA model is fit independently using only the respective feature set, resulting in 2 principal components for visualization in 2D space.
 
-# In[25]:
+# In[6]:
 
 
 # apply pca on single-cell profiles with on morphological signatures
-pca_on_result = apply_pca(
+pca_on_result, explained_variance_df = apply_pca(
     profiles=on_profiles_df,
     meta_features=cfret_meta,
     morph_features=on_sigsnature_feats,
-    var_explained=0.95,
+    var_explained=2,  # getting two components to visualize in 2D space
     random_state=0,
 )
 
 # apply pca on single-cell profiles with off morphological signatures
-pca_off_results = apply_pca(
+pca_off_results, explained_variance_off_df = apply_pca(
     profiles=off_profiles_df,
     meta_features=cfret_meta,
     morph_features=off_signature_feats,
-    var_explained=0.95,
+    var_explained=2,  # getting two components to visualize in 2D space
     random_state=0,
 )
 
 # save pca compounents
 pca_on_result.write_parquet(pca_dir / "cfret_pilot_on_morph_pca.parquet")
+explained_variance_df.write_parquet(
+    pca_dir / "cfret_pilot_on_morph_pca_var_explained.parquet"
+)
 pca_off_results.write_parquet(pca_dir / "cfret_pilot_off_morph_pca.parquet")
+explained_variance_off_df.write_parquet(
+    pca_dir / "cfret_pilot_off_morph_pca_var_explained.parquet"
+)
 
 # print shapes
 print("PCA on morph shape:", pca_on_result.shape)
 print("PCA off morph shape:", pca_off_results.shape)
 
 
-# Apply UMAP to both on and off profiles
+# Apply UMAP with 2 components independently on three feature sets:
+# 1. **All morphological features** - using the complete feature set from `cfret_feats`
+# 2. **On-morphology signatures only** - using features in the "on" signature
+# 3. **Off-morphology signatures only** - using features in the "off" signature
+#
+# Each UMAP embedding is saved separately for downstream analysis and visualization.
 
-# In[26]:
+# In[7]:
 
 
+# apply a global umap on single-cell profiles with on and off morphological signatures
+umap_all_result = apply_umap(
+    profiles=cfret_profiles_df,
+    meta_features=cfret_meta,
+    morph_features=cfret_feats,
+    n_components=2,
+    random_state=0,
+    metric="cosine",
+)
 # apply umap on single-cell profiles with off morphological signatures
 umap_on_result = apply_umap(
     profiles=on_profiles_df,
@@ -124,6 +156,7 @@ umap_on_result = apply_umap(
     morph_features=on_sigsnature_feats,
     n_components=2,
     random_state=0,
+    metric="cosine",
 )
 
 # apply umap on single-cell profiles with off morphological signatures
@@ -133,15 +166,15 @@ umap_off_result = apply_umap(
     morph_features=off_signature_feats,
     n_components=2,
     random_state=0,
+    metric="cosine",
 )
 
 # save umap compounents
+umap_all_result.write_parquet(umap_dir / "cfret_pilot_all_morph_umap.parquet")
 umap_on_result.write_parquet(umap_dir / "cfret_pilot_on_morph_umap.parquet")
 umap_off_result.write_parquet(umap_dir / "cfret_pilot_off_morph_umap.parquet")
 
 # print shapes
+print("UMAP on all morph shape:", umap_all_result.shape)
 print("UMAP on morph shape:", umap_on_result.shape)
 print("UMAP off morph shape:", umap_off_result.shape)
-
-
-# In[ ]:
