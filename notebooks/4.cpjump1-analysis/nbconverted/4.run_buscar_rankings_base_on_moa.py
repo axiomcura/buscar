@@ -13,11 +13,21 @@ import polars as pl
 from tqdm import tqdm
 
 sys.path.append("../../")
-from utils.data_utils import shuffle_feature_profiles, split_meta_and_features
+from utils.data_utils import shuffle_profiles, split_meta_and_features
 from utils.identify_hits import identify_compound_hit
 from utils.io_utils import load_configs, load_profiles
 from utils.metrics import measure_phenotypic_activity
 from utils.signatures import get_signatures
+
+# Notebook parameters
+
+# In[2]:
+
+
+# set to True for debugging purposes, to run the notebook faster with a subset of the data
+subet_data = False
+subet_fraction = 0.1
+
 
 # Setting input and output paths
 
@@ -173,23 +183,19 @@ cpjump1_df.head()
 
 
 # create a subsetted dataframe for faster testing (optional)
-# subset around 10%
-# ----------------------------------------------------------------
-# comment below lines to disable subsetting
-# subset = 0.10
-# print("Subsetting data for testing purposes...")
-# print("subsetting fraction:", subset)
-# print("original dataframe shape:", cpjump1_df.shape)
-# cpjump1_df = (
-#     cpjump1_df.group_by(["Metadata_Plate", "Metadata_Well"])
-#     .agg(pl.all().sample(fraction=subset, seed=0))
-#     .explode(pl.all().exclude(["Metadata_Plate", "Metadata_Well"]))
-# )
-# print(f"New dataframe shape: {cpjump1_df.shape}")
-# ----------------------------------------------------------------
+if subet_data:
+    print("Subsetting data for testing purposes...")
+    print("subsetting fraction:", subet_fraction)
+    print("original dataframe shape:", cpjump1_df.shape)
+    cpjump1_df = (
+        cpjump1_df.group_by(["Metadata_Plate", "Metadata_Well"])
+        .agg(pl.all().sample(fraction=subet_fraction, seed=0))
+        .explode(pl.all().exclude(["Metadata_Plate", "Metadata_Well"]))
+    )
+    print(f"New dataframe shape: {cpjump1_df.shape}")
 
 # Create the shuffled baseline dataset
-cpjump1_df_shuffled = shuffle_feature_profiles(cpjump1_df, shared_features, seed=42)
+cpjump1_df_shuffled = shuffle_profiles(cpjump1_df, shared_features, seed=42)
 
 
 # In[7]:
@@ -291,7 +297,7 @@ else:
 logger.info("Logger initialized for Buscar MoA analysis.")
 
 
-# In[ ]:
+# In[12]:
 
 
 # Run Buscar analysis for each treatment in both original and shuffled datasets
@@ -300,7 +306,7 @@ scores = {
     "shuffled": {},
 }  # store results here with dataset_type as top-level key
 for dataset_type, cpjump1_df_to_use in {
-    "original": cpjump1_df,
+    # "original": cpjump1_df,
     "shuffled": cpjump1_df_shuffled,
 }.items():
     logger.info(f"Starting analysis for dataset: {dataset_type}")
@@ -431,6 +437,3 @@ for dataset_type, cpjump1_df_to_use in {
             logger.info(
                 f"Saved results for treatment: {treatment}, iteration: {n_iter}, dataset: {dataset_type}"
             )
-
-
-# In[ ]:
