@@ -30,6 +30,8 @@ dependencies:
   - r-cowplot
   - r-pheatmap
   - r-magick
+  - r-gganimate
+  - r-gifski
   - bioconductor-complexheatmap
   - r-circlize
   - r-plotly
