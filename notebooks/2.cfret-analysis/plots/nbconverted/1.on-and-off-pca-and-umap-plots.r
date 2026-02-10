@@ -381,10 +381,13 @@ umap_contour_combined <- ggplot(umap_contour_df, aes(x = UMAP1, y = UMAP2, color
     theme(
         strip.text = element_text(face = "bold", size = 11),
         panel.spacing = unit(1, "lines")
-    )
+    ) +
+    ylim(NA, 10) +
+    xlim(NA, 9.5)
+
 
 # Display plot
-options(repr.plot.width = 12, repr.plot.height = 12, repr.plot.res = render_dpi)
+options(repr.plot.width = 8, repr.plot.height = 12, repr.plot.res = render_dpi)
 
 # Save UMAP KDE contour plot
 ggsave(
