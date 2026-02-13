@@ -30,7 +30,7 @@ import polars as pl
 
 sys.path.append("../../")
 from utils import io_utils
-from utils._metrics import measure_phenotypic_activity
+from buscar.metrics import measure_phenotypic_activity
 
 # helper functions
 
