@@ -189,14 +189,14 @@ def calculate_off_score(
     ratio_stats_method: str = "ks_test",
     seed: int = 0,
 ) -> float:
-    """Calculting off scores
+    """Calculating off scores
 
-    To caclualte the off scores, we search if there are any features within the
-    off-morpholgical signatures that has become significant. if so, this indciates that
-    the treatment has affectd some morpholgoical features that were not affected prior.
+    To calculate the off scores, we search for features within the
+    off-morphological signatures that have become significant. If so, this indicates that
+    the treatment has affected some morphological features that were not affected prior.
 
-    The equation is (True off morpholgical signaturs / total off morphoglical signature)
-    This ratio track weather
+    The equation is (true off-morphological signatures / total off-morphological signatures).
+    This ratio tracks whether the treatment induces changes in off-morphological features.
 
     Parameters
     ----------
