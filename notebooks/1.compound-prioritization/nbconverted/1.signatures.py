@@ -31,9 +31,9 @@ import tqdm
 
 # Import custom utility functions
 sys.path.append("../../")
+from buscar.signatures import get_signatures
 from utils.data_utils import generate_consensus_signatures, split_meta_and_features
 from utils.io_utils import load_profiles
-from utils.signatures import get_signatures
 
 # In[2]:
 

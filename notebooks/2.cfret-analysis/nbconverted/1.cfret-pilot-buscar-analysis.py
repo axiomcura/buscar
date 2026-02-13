@@ -21,14 +21,15 @@ import sys
 import polars as pl
 
 sys.path.append("../../")
+from buscar._identify_hits import identify_compound_hit
+from buscar.signatures import get_signatures
+from utils._metrics import measure_phenotypic_activity
+
 # from utils.metrics import measure_phenotypic_activity
 from utils.data_utils import split_meta_and_features
 from utils.heterogeneity import optimized_clustering
-from utils.identify_hits import identify_compound_hit
 from utils.io_utils import load_profiles
-from utils.metrics import measure_phenotypic_activity
 from utils.preprocess import apply_pca
-from utils.signatures import get_signatures
 
 # Setting paramters
 
