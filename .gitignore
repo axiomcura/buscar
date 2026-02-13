@@ -173,3 +173,6 @@ results/
 
 # remove background jobs
 *nohup.out
+
+# ignore .vscode settings
+.vscode/
