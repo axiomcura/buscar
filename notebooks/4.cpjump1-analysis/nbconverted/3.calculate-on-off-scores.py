@@ -18,7 +18,7 @@ import polars as pl
 import tqdm
 
 sys.path.append("../../")
-from utils._metrics import measure_phenotypic_activity
+from buscar.metrics import measure_phenotypic_activity
 from utils.data_utils import split_meta_and_features
 from utils.io_utils import load_configs, load_profiles
 
