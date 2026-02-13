@@ -27,7 +27,6 @@ from buscar.metrics import measure_phenotypic_activity
 
 # from utils.metrics import measure_phenotypic_activity
 from utils.data_utils import split_meta_and_features
-from utils.heterogeneity import optimized_clustering
 from utils.io_utils import load_profiles
 from utils.preprocess import apply_pca
 
