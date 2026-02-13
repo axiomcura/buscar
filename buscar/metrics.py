@@ -208,6 +208,9 @@ def calculate_off_score(
         List of feature names that constitute the off-morphological signature.
     method : str, optional
         Statistical test method to use for determining significance, by default "ks_test"
+    ratio_stats_method : str, optional
+        Statistical test used when ``method`` is set to ``"affected_ratio"`` to assess
+        significance of changes in off-signature features.
 
     Returns
     -------
@@ -230,7 +233,7 @@ def calculate_off_score(
 
 
 @beartype
-def caclulate_on_score(
+def calculate_on_score(
     ref_profile: pl.DataFrame,
     target_profile: pl.DataFrame,
     on_signature: list[str],
@@ -251,8 +254,6 @@ def caclulate_on_score(
         Target morphological profile.
     on_signature : list[str]
         List of features that constitute the on-morphological signature.
-    ref_score : float
-        Reference score for comparison.
     method : Literal["emd"], optional
         Method for calculating on scores, by default "emd"
     Returns
@@ -322,6 +323,9 @@ def measure_phenotypic_activity(
         - "affected_ratio": proportion of off features that became significant
         - "emd": Earth Mover's Distance in off-feature space
         by default "affected_ratio"
+    ratio_stats_method : str, optional
+        Statistical test used when ``off_method`` is set to ``"affected_ratio"`` to
+        assess significance of changes in off-signature features.
     seed : int, optional
         Random seed for reproducibility in stochastic methods, by default 0
 
@@ -407,7 +411,7 @@ def measure_phenotypic_activity(
             )
 
         # compute distance in on-feature space (expected changes)
-        on_score = caclulate_on_score(ref_profile, target_profile, on_signature)
+        on_score = calculate_on_score(ref_profile, target_profile, on_signature)
 
         # compute distance in off-feature space (unintended changes)
         off_score = calculate_off_score(
