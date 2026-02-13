@@ -12,281 +12,421 @@ import ot
 import polars as pl
 from beartype import beartype
 
+from .signatures import get_signatures
 
-def _generate_on_off_profiles(
-    profiles: pl.DataFrame, on_signature: list[str], off_signature: list[str]
-):
-    """Generate on and off profiles from the given profiles.
-    This function generates two DataFrames: one for on-morphology profiles, containing
-    morphological features that are significantly different between cellular states
-    (e.g., healthy vs. diseased), and another for off-morphology profiles, containing
-    features that are not significant for these states. Both off and on-morphology profiles
-    are then used to compute phenotypic activity and interpret cellular dynamics. This
-    will generate two scores: on and off scores for the morphological profiles.
+
+@beartype
+def _normalize_scores_if_emd(
+    scores_df: pl.DataFrame,
+    target_state: str,
+    on_method: bool = False,
+    off_method: bool = False,
+) -> pl.DataFrame:
+    """Normalize EMD scores relative to the target state.
+
+    This function normalizes scores by dividing all values by the target state's score,
+    making the target state equal to 1.0 and all other scores relative to it.
+
+    This enables interpretation as:
+    - score < 1.0: closer to reference than target
+    - score = 1.0: equivalent to target state
+    - score > 1.0: further from reference than target
 
     Parameters
     ----------
-    profiles : pl.DataFrame
-        The input profiles DataFrame.
-    on_signature : list[str]
-        Morphological profiles that are in the on-morphology signature.
-    off_signature : list[str]
-        The list of features to include in the off profile.
+    scores_df : pl.DataFrame
+        DataFrame containing computed scores with columns:
+        - "treatment": treatment identifiers
+        - "on_score": EMD scores in on-feature space
+        - "off_score": EMD scores in off-feature space
+    target_state : str
+        Treatment identifier representing the desired phenotypic state.
+        Used as the normalization reference (its score becomes 1.0).
+    on_method : bool, optional
+        If True, normalize the "on_score" column, by default False.
+    off_method : bool, optional
+        If True, normalize the "off_score" column, by default False.
 
     Returns
     -------
-    tuple
-        A tuple containing two DataFrames: the on profile and the off profile.
+    pl.DataFrame
+        DataFrame with normalized scores. Columns are unchanged if their
+        corresponding method flag is False.
+
+    Raises
+    ------
+    ValueError
+        If target_state is not found in the scores DataFrame.
+        If the target state's score is 0 (division by zero).
     """
-    on_profiles = profiles[on_signature]
-    off_profiles = profiles[off_signature]
-    return on_profiles, off_profiles
+
+    # normalize on_scores if set to true
+    if on_method:
+        target_rows = scores_df.filter(pl.col("treatment") == target_state)
+        if target_rows.height == 0:
+            raise ValueError(
+                f"Target state '{target_state}' not found in scores DataFrame. "
+                "Cannot normalize EMD scores."
+            )
+        ref_on_score = target_rows.select("on_score").item()
+        if ref_on_score == 0:
+            raise ValueError("Target state on_score is 0, cannot normalize.")
+        scores_df = scores_df.with_columns(
+            (pl.col("on_score") / ref_on_score).alias("on_score")
+        )
+
+    # normalize off_scores if set to true
+    if off_method:
+        target_rows = scores_df.filter(pl.col("treatment") == target_state)
+        if target_rows.height == 0:
+            raise ValueError(
+                f"Target state '{target_state}' not found in scores DataFrame. "
+                "Cannot normalize EMD scores."
+            )
+        ref_off_score = target_rows.select("off_score").item()
+        if ref_off_score == 0:
+            raise ValueError("Target state off_score is 0, cannot normalize.")
+        scores_df = scores_df.with_columns(
+            (pl.col("off_score") / ref_off_score).alias("off_score")
+        )
+
+    return scores_df
 
 
 def compute_earth_movers_distance(
-    ref_profiles: pl.DataFrame,
-    exp_profiles: pl.DataFrame,
-    on_signature: list[str],
-    off_signature: list[str],
-    distance_metric: Literal["euclidean", "cosine", "sqeuclidean"] = "euclidean",
-):
-    """Compute the Earth Mover's Distance (EMD) between reference and
-    experimental profiles.
+    profile1: pl.DataFrame,
+    profile2: pl.DataFrame,
+    subsample_size: int | None = None,
+    seed: int | None = 0,
+) -> float:
+    """Computing the earth mover's distance between two profiles
 
-    Takes in the reference and experimental profiles, along with their on and off
-    signatures, and computes the EMD. Two scores will be returned: the EMD for the
-    on-morphology profiles and the EMD for the off-morphology profiles.
+    Parameters
+    ----------
+    profile1 : pl.DataFrame
+        First morphological profile containing feature measurements
+    profile2 : pl.DataFrame
+        Second morphological profile containing feature measurements
+    subsample_size : Optional[int], optional
+        If provided, the number of samples to subsample from each profile for distance
+        computation, by default None (use all samples)
+
+    Returns
+    -------
+    float
+        Earth Mover's Distance (Wasserstein distance) between the two profiles
+    """
+    # Convert the profiles to numpy arrays
+    p1 = profile1.to_numpy()
+    p2 = profile2.to_numpy()
+
+    # Subsample if requested
+    if subsample_size is not None:
+        rng = np.random.default_rng(seed)  # set random seed for reproducibility
+        if subsample_size < p1.shape[0]:
+            p1 = p1[rng.choice(p1.shape[0], subsample_size, replace=False)]
+        if subsample_size < p2.shape[0]:
+            p2 = p2[rng.choice(p2.shape[0], subsample_size, replace=False)]
+
+    # Compute the sample-sample distance matrix (using Euclidean distance)
+    M = ot.dist(p1, p2)
+
+    # Create uniform distributions over samples for optimal transport for both ref and
+    # target profiles
+    ref_weights = np.ones(p1.shape[0]) / p1.shape[0]
+    target_weights = np.ones(p2.shape[0]) / p2.shape[0]
+
+    # Compute the Earth Mover's Distance (EMD)
+    emd_value = ot.emd2(ref_weights, target_weights, M)
+
+    return emd_value
+
+
+def affected_off_features_ratio(
+    ref_profiles: pl.DataFrame,
+    target_profiles: pl.DataFrame,
+    off_signature: list[str],
+    method: str = "ks_test",
+) -> float:
+    """Calculate the ratio of affected off features
+
+    This metric calculates the ratio of features within the off-morphological signature
+    that have become significant in the target profiles compared to the reference
+    profiles. A higher ratio indicates that more off features have been affected by
+    the treatment or condition being evaluated.
 
     Parameters
     ----------
     ref_profiles : pl.DataFrame
-        The reference profiles DataFrame.
-    exp_profiles : pl.DataFrame
-        The experimental profiles DataFrame.
-    on_signature : list[str]
-        Morphological profiles that are in the on-morphology signature.
+        DataFrame containing the reference morphological profiles.
+    target_profiles : pl.DataFrame
+        DataFrame containing the target morphological profiles.
     off_signature : list[str]
-        The list of features to include in the off profile.
-    distance_metric : Literal, optional
-        Distance metric to use when generating the distance matrices.
-        Must be one of: "euclidean", "cosine", "sqeuclidean".
+        List of feature names that constitute the off-morphological signature.
+    method : str, optional
+        Statistical test method to use for determining significance, by default "ks_test"
+
     Returns
     -------
-    tuple
-        A tuple containing the EMD for the on-morphology and off-morphology profiles.
-
-    Notes
-    -----
-        Earth mover's distance citation: https://doi.org/10.1023/A:1026543900054
+    float
+        Ratio of affected off features (number of affected off features / total number
+        of off features).
     """
 
-    # Check for empty DataFrames to avoid division by zero
-    if ref_profiles.shape[0] == 0 or exp_profiles.shape[0] == 0:
-        raise ValueError("ref_profiles and exp_profiles must not be empty.")
-    if exp_profiles.shape[0] == 0:
-        raise ValueError("exp_profiles is empty, cannot compute weights.")
-
-    # Compute a uniform distribution of weights for each point
-    # This allows for each cell to be weighted equally in the EMD calculation.
-    weights_ref = np.ones(ref_profiles.shape[0]) / ref_profiles.shape[0]
-    weights_exp = np.ones(exp_profiles.shape[0]) / exp_profiles.shape[0]
-
-    # creating on and off profiles for both the reference and experimental profiles
-    on_ref_profiles, off_ref_profiles = _generate_on_off_profiles(
-        ref_profiles, on_signature, off_signature
-    )
-    on_exp_profiles, off_exp_profiles = _generate_on_off_profiles(
-        exp_profiles, on_signature, off_signature
+    on_sig, off_sig, _ = get_signatures(
+        ref_profiles, target_profiles, morph_feats=off_signature, test_method=method
     )
 
-    # Create distance matrices between reference and experimental profiles.
-    # These matrices quantify the cost of moving mass between distributions
-    # in the Earth Mover's Distance calculation.
-    off_M = ot.dist(
-        x1=off_ref_profiles.to_numpy(),
-        x2=off_exp_profiles.to_numpy(),
-        metric=distance_metric,
-    )
-    on_M = ot.dist(
-        x1=on_ref_profiles.to_numpy(),
-        x2=on_exp_profiles.to_numpy(),
-        metric=distance_metric,
-    )
+    return len(on_sig) / len(off_signature)
 
-    # compute on and off emd scores
-    on_emd = ot.emd2(weights_ref, weights_exp, on_M)
-    off_emd = ot.emd2(weights_ref, weights_exp, off_M)
 
-    return on_emd, off_emd
+def calculate_off_score(
+    ref_profile: pl.DataFrame,
+    target_profile: pl.DataFrame,
+    off_signature: list[str],
+    method: Literal["affected_ratio", "emd"] = "affected_ratio",
+    ratio_stats_method: str = "ks_test",
+    seed: int = 0,
+) -> float:
+    """Calculting off scores
+
+    To caclualte the off scores, we search if there are any features within the
+    off-morpholgical signatures that has become significant. if so, this indciates that
+    the treatment has affectd some morpholgoical features that were not affected prior.
+
+    The equation is (True off morpholgical signaturs / total off morphoglical signature)
+    This ratio track weather
+
+    Parameters
+    ----------
+    ref_profile : pl.DataFrame
+        DataFrame containing the reference morphological profile.
+    target_profile : pl.DataFrame
+        DataFrame containing the target morphological profile.
+    off_signature : list[str]
+        List of feature names that constitute the off-morphological signature.
+    method : str, optional
+        Statistical test method to use for determining significance, by default "ks_test"
+
+    Returns
+    -------
+    float
+        Off score indicating the proportion of off features that have become significant.
+    """
+
+    # apply earth movers distance
+    if method == "emd":
+        return compute_earth_movers_distance(
+            ref_profile.select(pl.col(off_signature)),
+            target_profile.select(pl.col(off_signature)),
+            seed=seed,
+        )
+
+    if method == "affected_ratio":
+        return affected_off_features_ratio(
+            ref_profile, target_profile, off_signature, method=ratio_stats_method
+        )
+
+
+@beartype
+def caclulate_on_score(
+    ref_profile: pl.DataFrame,
+    target_profile: pl.DataFrame,
+    on_signature: list[str],
+    method: Literal["emd"] = "emd",
+) -> float:
+    """Functions that handles
+
+    Parameters
+    ----------
+    ref_profile : pl.DataFrame
+        _description_
+    target_profile : pl.DataFrame
+        _description_
+    on_signature : list[str]
+        _description_
+    ref_score : float
+        _description_
+    method : Literal[&quot;emd&quot;], optional
+        _description_, by default "emd"
+
+    Returns
+    -------
+    float
+        _description_
+    """
+
+    if method == "emd":
+        return compute_earth_movers_distance(
+            ref_profile.select(pl.col(on_signature)),
+            target_profile.select(pl.col(on_signature)),
+        )
 
 
 @beartype
 def measure_phenotypic_activity(
     profiles: pl.DataFrame,
+    meta_cols: list[str],
     on_signature: list[str],
     off_signature: list[str],
-    ref_treatment: str = "DMSO",
-    cluster_col: str = "Metadata_cluster_id",
-    treatment_col: str = "Metadata_treatment",
-    method: Literal["emd"] = "emd",
-    emd_dist_matrix_method: Literal["euclidean", "cosine", "sqeuclidean"] = "euclidean",
+    ref_state: str,
+    target_state: str,
+    treatment_col: str,
+    on_method: Literal["emd"] = "emd",
+    off_method: Literal["affected_ratio", "emd"] = "affected_ratio",
+    ratio_stats_method: str = "ks_test",
+    seed: int = 0,
 ) -> pl.DataFrame:
-    """Measure how different treatment clusters are from reference (control) clusters.
+    """Measure phenotypic activity by comparing morphological profiles across conditions.
 
-    This function compares cell populations between a reference treatment (e.g., DMSO control)
-    and experimental treatments by calculating distance scores. For each treatment cluster,
-    it computes distances to all reference clusters using two sets of morphological features:
+    This function quantifies phenotypic changes between a reference state and multiple
+    treatment conditions using two complementary metrics:
 
-    - **On-signature**: Features that should change with treatment (biologically relevant)
-    - **Off-signature**: Features that should remain stable (used as baseline)
+    1. On-score: measures the magnitude of change in features expected to be affected
+    2. Off-score: measures unintended effects on features expected to remain unchanged
 
-    The function returns pairwise comparisons with distance scores and cluster ratios,
-    which can be used to identify which treatment clusters show meaningful phenotypic changes.
+    Lower on-scores indicate profiles more similar to the target phenotype, while lower
+    off-scores indicate higher specificity (fewer off-target effects).
 
     Parameters
     ----------
     profiles : pl.DataFrame
-        Combined DataFrame containing both reference and experimental profiles with
-        morphological features, cluster assignments, and treatment labels.
+        Morphological profiles containing feature measurements and metadata for all
+        experimental conditions.
+    meta_cols : list[str]
+        Column names containing metadata (e.g., treatment, well, plate). These columns
+        will be excluded from distance calculations.
     on_signature : list[str]
-        Morphological feature columns expected to change with treatment (target features).
+        Feature names expected to change between reference and target states. These
+        define the desired phenotypic response.
     off_signature : list[str]
-        Morphological feature columns expected to remain stable (baseline features).
-    ref_treatment : str, optional
-        Name of the reference/control treatment to compare against, by default "DMSO".
-    cluster_col : str, optional
-        Column name containing cluster identifiers, by default "Metadata_cluster".
+        Feature names expected to remain unchanged. These serve as controls to detect
+        off-target or non-specific effects.
+    ref_state : str
+        Value in treatment_col representing the baseline/control condition.
+    target_state : str
+        Value in treatment_col representing the desired phenotypic state.
     treatment_col : str, optional
-        Column name containing treatment labels, by default "Metadata_treatment".
-    method : Literal["emd"], optional
-        Distance calculation method. Currently only "emd" (Earth Mover's Distance)
-        is supported, by default "emd".
-    emd_dist_matrix_method : Literal["euclidean", "cosine", "sqeuclidean"], optional
-        Distance metric for computing pairwise distances in EMD, by default "euclidean".
+        Column name containing treatment identifiers, by default "Metadata_treatment"
+    on_method : Literal["emd"], optional
+        Method for computing on-scores. Currently only Earth Mover's Distance (EMD)
+        is supported, by default "emd"
+    off_method : Literal["affected_ratio", "emd"], optional
+        Method for computing off-scores:
+        - "affected_ratio": proportion of off features that became significant
+        - "emd": Earth Mover's Distance in off-feature space
+        by default "affected_ratio"
+    seed : int, optional
+        Random seed for reproducibility in stochastic methods, by default 0
 
     Returns
     -------
     pl.DataFrame
-        DataFrame with one row per reference-treatment cluster pair, containing:
-        - ref_cluster: Reference cluster ID
-        - treatment: Treatment name
-        - exp_cluster: Experimental treatment cluster ID
-        - on_dist: Distance score for on-signature features (lower = more similar)
-        - off_dist: Distance score for off-signature features (lower = more similar)
-        - exp_cluster_ratio: Proportion of treatment cells in this cluster
-
-        Returns empty DataFrame if no valid comparisons can be made.
+        Ranked results with columns:
+        - rank: integer ranking (1 = best match to target)
+        - ref_profile: reference state identifier
+        - treatment: treatment condition identifier
+        - on_score: normalized distance in on-feature space (lower is better)
+        - off_score: measure of off-target effects (lower is more specific)
 
     Raises
     ------
-    KeyError
-        If cluster_col is not found in the profiles DataFrame.
+    ValueError
+        If the profiles DataFrame is empty.
+        If treatment_col is not in the profiles DataFrame.
+        If treatment_col contains null values.
+        If on_signature or off_signature features are missing from profiles.
+
+    Notes
+    -----
+    On-scores are normalized relative to the reference state's self-distance to enable
+    comparison across different feature sets and experimental conditions.
     """
-    # Validate required columns exist
-    meta_feats = profiles.drop(on_signature + off_signature).columns
 
-    if cluster_col not in meta_feats:
-        raise KeyError(f"Column '{cluster_col}' not found in ref_profile")
-
-    # create a cluster ratio dataframe
-    if (
-        "Metadata_cluster_ratio" not in meta_feats
-        and "Metadata_cluster_id" not in meta_feats
-    ):
-        raise KeyError(
-            "Cluster ratio columns 'Metadata_cluster_ratio' and"
-            "'Metadata_cluster_id' not found in profiles DataFrame. This"
-            "indicates that your profiles have not been clustered. Please run"
-            "clustering before measuring phenotypic activity."
+    # validate input data integrity
+    if profiles.is_empty():
+        raise ValueError("The profiles DataFrame is empty.")
+    if treatment_col not in profiles.columns:
+        raise ValueError(
+            f"The treatment column '{treatment_col}' is not in the profiles DataFrame"
         )
-    cluster_ratio_dict = dict(
-        profiles[["Metadata_cluster_id", "Metadata_cluster_ratio"]].unique().rows()
-    )
+    if profiles[treatment_col].is_null().any():
+        raise ValueError(
+            f"The treatment column '{treatment_col}' contains null values."
+        )
+    if not set(on_signature).issubset(profiles.columns):
+        raise ValueError(
+            "Some features in the on_signature are not present in the "
+            "profiles DataFrame."
+        )
+    if not set(off_signature).issubset(profiles.columns):
+        raise ValueError(
+            "Some features in the off_signature are not present in the "
+            "profiles DataFrame."
+        )
 
-    # separating ref and exp profiles
-    ref_profiles = profiles.filter(pl.col(treatment_col) == ref_treatment)
-    exp_profiles = profiles.filter(pl.col(treatment_col) != ref_treatment)
-
-    # get all unique combinations by using group by
-    ref_clusters = (
-        ref_profiles.group_by(cluster_col)
-        .len()
-        .select(cluster_col)
+    # extract all unique treatment conditions excluding the reference
+    treatments = (
+        profiles.filter(pl.col(treatment_col) != ref_state)
+        .select(treatment_col)
+        .unique()
         .to_series()
         .to_list()
     )
 
-    exp_combinations = (
-        exp_profiles.group_by([treatment_col, cluster_col])
-        .len()
-        .select([treatment_col, cluster_col])
-        .rows()
-    )
+    # initialize storage for computed scores
+    scores = []
 
-    # generate all treatment-cluster combinations
-    treatment_cluster_combinations = [
-        (treatment, ref_cluster, exp_cluster)
-        for treatment, exp_cluster in exp_combinations
-        for ref_cluster in ref_clusters
-    ]
-
-    # Calculate distances for each combination
-    dist_scores = []
-    for treatment, ref_cluster, exp_cluster in treatment_cluster_combinations:
-        try:
-            # Get pre-filtered data
-            ref_cluster_population_df = ref_profiles.filter(
-                pl.col(cluster_col) == ref_cluster
-            )
-
-            exp_cluster_population_df = exp_profiles.filter(
-                (pl.col(treatment_col) == treatment)
-                & (pl.col(cluster_col) == exp_cluster)
-            )
-
-            # Skip if either population is empty
-            if (
-                ref_cluster_population_df.height == 0
-                or exp_cluster_population_df.height == 0
-            ):
-                continue
-
-            # Calculate EMD distances
-            on_dist, off_dist = compute_earth_movers_distance(
-                ref_cluster_population_df,
-                exp_cluster_population_df,
-                on_signature,
-                off_signature,
-                distance_metric=emd_dist_matrix_method,
-            )
-
-            # Store results
-            dist_scores.append(
-                {
-                    "ref_cluster": ref_cluster,
-                    "treatment": treatment,
-                    "trt_cluster": exp_cluster,
-                    "on_dist": on_dist,
-                    "off_dist": off_dist,
-                    "exp_cluster_ratio": cluster_ratio_dict[exp_cluster],
-                }
-            )
-
-        except Exception:
+    # iterate through each treatment condition
+    for treatment in treatments:
+        # skipping the reference state itself it will be comparing to itself
+        if treatment == ref_state:
             continue
 
-    # if no valid scores were computed,
-    # return an empty DataFrame with the correct schema
-    if not dist_scores:
-        # Return empty DataFrame with correct schema
-        return pl.DataFrame(
-            {
-                "ref_cluster": [],
-                "treatment": [],
-                "exp_cluster": [],
-                "on_dist": [],
-                "off_dist": [],
-            }
+        # extract morphological features for reference condition (excluding metadata)
+        ref_profile = profiles.filter(pl.col(treatment_col) == ref_state).drop(
+            meta_cols
         )
 
-    return pl.DataFrame(dist_scores)
+        # extract morphological features for current treatment condition
+        target_profile = profiles.filter(pl.col(treatment_col) == treatment).drop(
+            meta_cols
+        )
+
+        # raise error if the shape of both target and ref profiels are 0
+        if ref_profile.height == 0 or target_profile.height == 0:
+            raise ValueError(
+                f"Empty profile detected: target {target_profile.height} "
+                f"rows, reference {ref_profile.height} rows."
+            )
+
+        # compute distance in on-feature space (expected changes)
+        on_score = caclulate_on_score(ref_profile, target_profile, on_signature)
+
+        # compute distance in off-feature space (unintended changes)
+        off_score = calculate_off_score(
+            ref_profile, target_profile, off_signature, method=off_method, seed=seed
+        )
+
+        # store computed scores for this treatment
+        scores.append((ref_state, treatment, on_score, off_score))
+
+    # construct dataframe from collected scores
+    scores_df = pl.DataFrame(
+        scores, schema=["ref_profile", "treatment", "on_score", "off_score"]
+    )
+
+    # rank treatments: prioritize low on-scores, then low off-scores
+    scores_df = scores_df.sort(
+        ["on_score", "off_score"], descending=[False, False]
+    ).with_row_index(name="rank", offset=1)
+
+    # normalize scores if EMD method was used to enable comparison across different feature sets
+    scores_df = _normalize_scores_if_emd(
+        scores_df,
+        target_state,
+        on_method=(on_method == "emd"),
+        off_method=(off_method == "emd"),
+    )
+
+    return scores_df
