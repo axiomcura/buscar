@@ -399,7 +399,7 @@ def measure_phenotypic_activity(
             meta_cols
         )
 
-        # raise error if the shape of both target and ref profiels are 0
+        # raise error if the shape of both target and ref profiles are 0
         if ref_profile.height == 0 or target_profile.height == 0:
             raise ValueError(
                 f"Empty profile detected: target {target_profile.height} "
