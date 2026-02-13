@@ -15,7 +15,7 @@ from tqdm import tqdm
 sys.path.append("../../")
 from buscar._identify_hits import identify_compound_hit
 from buscar.signatures import get_signatures
-from utils._metrics import measure_phenotypic_activity
+from buscar.metrics import measure_phenotypic_activity
 from utils.data_utils import shuffle_profiles, split_meta_and_features
 from utils.io_utils import load_configs, load_profiles
 
