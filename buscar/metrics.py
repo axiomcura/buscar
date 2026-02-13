@@ -173,11 +173,12 @@ def affected_off_features_ratio(
         of off features).
     """
 
-    on_sig, off_sig, _ = get_signatures(
+    # generate signatures for the off features and count how many are affected
+    affected_off_sig, _, _ = get_signatures(
         ref_profiles, target_profiles, morph_feats=off_signature, test_method=method
     )
 
-    return len(on_sig) / len(off_signature)
+    return len(affected_off_sig) / len(off_signature)
 
 
 def calculate_off_score(
@@ -235,25 +236,29 @@ def caclulate_on_score(
     on_signature: list[str],
     method: Literal["emd"] = "emd",
 ) -> float:
-    """Functions that handles
+    """Calculate on score
+
+    To calculate the on score, we measure the distance between the reference and target
+    profiles in the on-morphological signature space. A lower on score indicates that the
+    target profile is more similar to the reference profile in terms of the features that
+    are expected to change.
 
     Parameters
     ----------
     ref_profile : pl.DataFrame
-        _description_
+        Reference morphological profile.
     target_profile : pl.DataFrame
-        _description_
+        Target morphological profile.
     on_signature : list[str]
-        _description_
+        List of features that constitute the on-morphological signature.
     ref_score : float
-        _description_
-    method : Literal[&quot;emd&quot;], optional
-        _description_, by default "emd"
-
+        Reference score for comparison.
+    method : Literal["emd"], optional
+        Method for calculating on scores, by default "emd"
     Returns
     -------
     float
-        _description_
+        On score indicating the magnitude of change in on features.
     """
 
     if method == "emd":
@@ -277,7 +282,8 @@ def measure_phenotypic_activity(
     ratio_stats_method: str = "ks_test",
     seed: int = 0,
 ) -> pl.DataFrame:
-    """Measure phenotypic activity by comparing morphological profiles across conditions.
+    """Measure phenotypic activity by comparing morphological profiles across
+    conditions.
 
     This function quantifies phenotypic changes between a reference state and multiple
     treatment conditions using two complementary metrics:
@@ -421,7 +427,8 @@ def measure_phenotypic_activity(
         ["on_score", "off_score"], descending=[False, False]
     ).with_row_index(name="rank", offset=1)
 
-    # normalize scores if EMD method was used to enable comparison across different feature sets
+    # normalize scores if EMD method was used to enable comparison across different
+    # feature sets
     scores_df = _normalize_scores_if_emd(
         scores_df,
         target_state,
