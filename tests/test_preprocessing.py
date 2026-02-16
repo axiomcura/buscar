@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from utils.preprocess import apply_pca
+from buscar.preprocess import apply_pca
 
 
 @contextlib.contextmanager
