@@ -98,6 +98,7 @@ def compute_earth_movers_distance(
     profile2: pl.DataFrame,
     subsample_size: int | None = None,
     seed: int | None = 0,
+    n_threads: int = -1,
 ) -> float:
     """Computing the earth mover's distance between two profiles
 
@@ -116,6 +117,9 @@ def compute_earth_movers_distance(
     float
         Earth Mover's Distance (Wasserstein distance) between the two profiles
     """
+    if n_threads == -1:
+        n_threads = "max"
+
     # Convert the profiles to numpy arrays
     p1 = profile1.to_numpy()
     p2 = profile2.to_numpy()
@@ -137,7 +141,7 @@ def compute_earth_movers_distance(
     target_weights = np.ones(p2.shape[0]) / p2.shape[0]
 
     # Compute the Earth Mover's Distance (EMD)
-    emd_value = ot.emd2(ref_weights, target_weights, M)
+    emd_value = ot.emd2(ref_weights, target_weights, M, numThreads=n_threads)
 
     return emd_value
 
@@ -281,6 +285,7 @@ def measure_phenotypic_activity(
     on_method: Literal["emd"] = "emd",
     off_method: Literal["affected_ratio", "emd"] = "affected_ratio",
     ratio_stats_method: str = "ks_test",
+    emd_n_threads: int = -1,
     seed: int = 0,
 ) -> pl.DataFrame:
     """Measure phenotypic activity by comparing morphological profiles across

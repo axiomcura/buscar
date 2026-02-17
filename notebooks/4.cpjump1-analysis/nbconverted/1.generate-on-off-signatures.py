@@ -84,17 +84,12 @@ crispr_cpjump1_path = (
 
 
 cpjump1_experimental_data = pl.read_csv(cpjump1_experimental_data_path)
-
-
-# In[5]:
-
-
-cpjump1_experimental_data.filter(pl.col("Cell_type") == "U2OS")
+cpjump1_experimental_data
 
 
 # Identify the plates containing U2OS and A549 cells treated for 144 hours.
 
-# In[6]:
+# In[5]:
 
 
 # Split the dataset by cell type and treatment duration
@@ -119,7 +114,7 @@ print(f"A549 plates: {a549_plates}")
 
 # loading in dataset
 
-# In[ ]:
+# In[6]:
 
 
 # load shared features
@@ -164,7 +159,7 @@ print(all_poscon_trts)
 
 # On and off signatures for the u2os cells
 
-# In[8]:
+# In[7]:
 
 
 # Setting save path
@@ -240,7 +235,7 @@ else:
 
 # On and Off signatures for the a549 cells
 
-# In[9]:
+# In[8]:
 
 
 # Setting save path
@@ -316,7 +311,7 @@ else:
 # Next we generate consensus on and off signatures for each positive control (poscon) gene by aggregating results from 10 independent negative control (DMSO) subsamples. Features included in the consensus signature are those identified as significant in at least 80% of comparisons (≥8 out of 10), highlighting robust and reproducible morphological differences.
 #
 
-# In[10]:
+# In[9]:
 
 
 # Generate consensus on and off signatures of U2OS cpjump1 results
