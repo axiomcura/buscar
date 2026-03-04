@@ -242,6 +242,7 @@ def calculate_on_score(
     target_profile: pl.DataFrame,
     on_signature: list[str],
     method: Literal["emd"] = "emd",
+    emd_n_threads: int = 1,
 ) -> float:
     """Calculate on score
 
@@ -270,6 +271,7 @@ def calculate_on_score(
         return compute_earth_movers_distance(
             ref_profile.select(pl.col(on_signature)),
             target_profile.select(pl.col(on_signature)),
+            n_threads=emd_n_threads,
         )
 
 
@@ -282,10 +284,11 @@ def measure_phenotypic_activity(
     ref_state: str,
     target_state: str,
     treatment_col: str,
+    state_col: str,
     on_method: Literal["emd"] = "emd",
     off_method: Literal["affected_ratio", "emd"] = "affected_ratio",
     ratio_stats_method: str = "ks_test",
-    emd_n_threads: int = -1,
+    emd_n_threads: int = 1,
     seed: int = 0,
 ) -> pl.DataFrame:
     """Measure phenotypic activity by comparing morphological profiles across
@@ -320,6 +323,8 @@ def measure_phenotypic_activity(
         Value in treatment_col representing the desired phenotypic state.
     treatment_col : str, optional
         Column name containing treatment identifiers, by default "Metadata_treatment"
+    state_col : str, optional
+        Column name containing state identifiers, by default "Mitocheck_Phenotypic_Class"
     on_method : Literal["emd"], optional
         Method for computing on-scores. Currently only Earth Mover's Distance (EMD)
         is supported, by default "emd"
@@ -382,7 +387,7 @@ def measure_phenotypic_activity(
 
     # extract all unique treatment conditions excluding the reference
     treatments = (
-        profiles.filter(pl.col(treatment_col) != ref_state)
+        profiles.filter(pl.col(treatment_col) != treatment_col)
         .select(treatment_col)
         .unique()
         .to_series()
@@ -399,9 +404,7 @@ def measure_phenotypic_activity(
             continue
 
         # extract morphological features for reference condition (excluding metadata)
-        ref_profile = profiles.filter(pl.col(treatment_col) == ref_state).drop(
-            meta_cols
-        )
+        ref_profile = profiles.filter(pl.col(state_col) == ref_state).drop(meta_cols)
 
         # extract morphological features for current treatment condition
         target_profile = profiles.filter(pl.col(treatment_col) == treatment).drop(
@@ -416,11 +419,21 @@ def measure_phenotypic_activity(
             )
 
         # compute distance in on-feature space (expected changes)
-        on_score = calculate_on_score(ref_profile, target_profile, on_signature)
+        on_score = calculate_on_score(
+            ref_profile,
+            target_profile,
+            on_signature,
+            method=on_method,
+            emd_n_threads=emd_n_threads,
+        )
 
         # compute distance in off-feature space (unintended changes)
         off_score = calculate_off_score(
-            ref_profile, target_profile, off_signature, method=off_method, seed=seed
+            ref_profile,
+            target_profile,
+            off_signature,
+            method=off_method,
+            seed=seed,
         )
 
         # store computed scores for this treatment
@@ -431,13 +444,13 @@ def measure_phenotypic_activity(
         scores, schema=["ref_profile", "treatment", "on_score", "off_score"]
     )
 
-    # rank treatments: prioritize low on-scores, then low off-scores
+    # # rank treatments: prioritize low on-scores, then low off-scores
     scores_df = scores_df.sort(
         ["on_score", "off_score"], descending=[False, False]
     ).with_row_index(name="rank", offset=1)
 
-    # normalize scores if EMD method was used to enable comparison across different
-    # feature sets
+    # # normalize scores if EMD method was used to enable comparison across different
+    # # feature sets
     scores_df = _normalize_scores_if_emd(
         scores_df,
         target_state,
