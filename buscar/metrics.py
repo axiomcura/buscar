@@ -16,7 +16,7 @@ from .signatures import get_signatures
 
 
 @beartype
-def _normalize_scores_if_emd(
+def _normalize_scores(
     scores_df: pl.DataFrame,
     target_state: str,
     on_method: bool = False,
@@ -98,7 +98,6 @@ def compute_earth_movers_distance(
     profile2: pl.DataFrame,
     subsample_size: int | None = None,
     seed: int | None = 0,
-    n_threads: int = -1,
 ) -> float:
     """Computing the earth mover's distance between two profiles
 
@@ -117,9 +116,6 @@ def compute_earth_movers_distance(
     float
         Earth Mover's Distance (Wasserstein distance) between the two profiles
     """
-    if n_threads == -1:
-        n_threads = "max"
-
     # Convert the profiles to numpy arrays
     p1 = profile1.to_numpy()
     p2 = profile2.to_numpy()
@@ -141,7 +137,7 @@ def compute_earth_movers_distance(
     target_weights = np.ones(p2.shape[0]) / p2.shape[0]
 
     # Compute the Earth Mover's Distance (EMD)
-    emd_value = ot.emd2(ref_weights, target_weights, M, numThreads=n_threads)
+    emd_value = ot.emd2(ref_weights, target_weights, M)
 
     return emd_value
 
@@ -185,22 +181,22 @@ def affected_off_features_ratio(
     return len(affected_off_sig) / len(off_signature)
 
 
-def calculate_off_score(
+@beartype
+def calculate_score(
     ref_profile: pl.DataFrame,
     target_profile: pl.DataFrame,
-    off_signature: list[str],
-    method: Literal["affected_ratio", "emd"] = "affected_ratio",
+    signature: list[str],
+    signature_type: Literal["on", "off"],
+    on_calculation: Literal["emd"] = "emd",
+    off_calculation: Literal["ratio_affected", "emd"] = "ratio_affected",
     ratio_stats_method: str = "ks_test",
     seed: int = 0,
 ) -> float:
-    """Calculating off scores
+    """Calculate on or off score for a given morphological signature.
 
-    To calculate the off scores, we search for features within the
-    off-morphological signatures that have become significant. If so, this indicates that
-    the treatment has affected some morphological features that were not affected prior.
-
-    The equation is (true off-morphological signatures / total off-morphological signatures).
-    This ratio tracks whether the treatment induces changes in off-morphological features.
+    Depending on ``signature_type``, this function measures either the magnitude of
+    change in expected features ("on") or the unintended effects on features that should
+    remain unchanged ("off").
 
     Parameters
     ----------
@@ -208,70 +204,55 @@ def calculate_off_score(
         DataFrame containing the reference morphological profile.
     target_profile : pl.DataFrame
         DataFrame containing the target morphological profile.
-    off_signature : list[str]
-        List of feature names that constitute the off-morphological signature.
-    method : str, optional
-        Statistical test method to use for determining significance, by default "ks_test"
+    signature : list[str]
+        List of feature names that constitute the morphological signature.
+    signature_type : Literal["on", "off"]
+        Whether to compute an on-score ("on") or off-score ("off").
+    on_calculation : Literal["emd"], optional
+        Method used to compute the on-score. Only Earth Mover's Distance ("emd") is
+        currently supported, by default "emd".
+    off_calculation : Literal["ratio_affected", "emd"], optional
+        Method used to compute the off-score:
+        - "ratio_affected": proportion of off features that became significant.
+        - "emd": Earth Mover's Distance in off-feature space.
+        By default "ratio_affected".
     ratio_stats_method : str, optional
-        Statistical test used when ``method`` is set to ``"affected_ratio"`` to assess
-        significance of changes in off-signature features.
+        Statistical test used when ``off_calculation`` is ``"ratio_affected"`` to assess
+        significance of changes in off-signature features, by default "ks_test".
+    seed : int, optional
+        Random seed for reproducibility in stochastic methods, by default 0.
 
     Returns
     -------
     float
-        Off score indicating the proportion of off features that have become significant.
+        Computed score for the given signature type and calculation method.
     """
 
-    # apply earth movers distance
-    if method == "emd":
-        return compute_earth_movers_distance(
-            ref_profile.select(pl.col(off_signature)),
-            target_profile.select(pl.col(off_signature)),
-            seed=seed,
-        )
+    if signature_type == "on":
+        if on_calculation == "emd":
+            return compute_earth_movers_distance(
+                ref_profile.select(pl.col(signature)),
+                target_profile.select(pl.col(signature)),
+            )
+        else:
+            raise ValueError(
+                f"Invalid on_calculation '{on_calculation}'. Must be 'emd'."
+            )
 
-    if method == "affected_ratio":
-        return affected_off_features_ratio(
-            ref_profile, target_profile, off_signature, method=ratio_stats_method
-        )
+    elif signature_type == "off":
+        if off_calculation == "ratio_affected":
+            return affected_off_features_ratio(
+                ref_profile, target_profile, signature, method=ratio_stats_method
+            )
+        else:
+            raise ValueError(
+                f"Invalid off_calculation '{off_calculation}'. Must be 'ratio_affected'"
+                " or 'emd'."
+            )
 
-
-@beartype
-def calculate_on_score(
-    ref_profile: pl.DataFrame,
-    target_profile: pl.DataFrame,
-    on_signature: list[str],
-    method: Literal["emd"] = "emd",
-    emd_n_threads: int = 1,
-) -> float:
-    """Calculate on score
-
-    To calculate the on score, we measure the distance between the reference and target
-    profiles in the on-morphological signature space. A lower on score indicates that the
-    target profile is more similar to the reference profile in terms of the features that
-    are expected to change.
-
-    Parameters
-    ----------
-    ref_profile : pl.DataFrame
-        Reference morphological profile.
-    target_profile : pl.DataFrame
-        Target morphological profile.
-    on_signature : list[str]
-        List of features that constitute the on-morphological signature.
-    method : Literal["emd"], optional
-        Method for calculating on scores, by default "emd"
-    Returns
-    -------
-    float
-        On score indicating the magnitude of change in on features.
-    """
-
-    if method == "emd":
-        return compute_earth_movers_distance(
-            ref_profile.select(pl.col(on_signature)),
-            target_profile.select(pl.col(on_signature)),
-            n_threads=emd_n_threads,
+    else:
+        raise ValueError(
+            f"Invalid signature_type '{signature_type}'. Must be 'on' or 'off'."
         )
 
 
@@ -284,11 +265,9 @@ def measure_phenotypic_activity(
     ref_state: str,
     target_state: str,
     treatment_col: str,
-    state_col: str,
     on_method: Literal["emd"] = "emd",
-    off_method: Literal["affected_ratio", "emd"] = "affected_ratio",
+    off_method: Literal["ratio_affected", "emd"] = "ratio_affected",
     ratio_stats_method: str = "ks_test",
-    emd_n_threads: int = 1,
     seed: int = 0,
 ) -> pl.DataFrame:
     """Measure phenotypic activity by comparing morphological profiles across
@@ -323,18 +302,16 @@ def measure_phenotypic_activity(
         Value in treatment_col representing the desired phenotypic state.
     treatment_col : str, optional
         Column name containing treatment identifiers, by default "Metadata_treatment"
-    state_col : str, optional
-        Column name containing state identifiers, by default "Mitocheck_Phenotypic_Class"
     on_method : Literal["emd"], optional
         Method for computing on-scores. Currently only Earth Mover's Distance (EMD)
         is supported, by default "emd"
-    off_method : Literal["affected_ratio", "emd"], optional
+    off_method : Literal["ratio_affected", "emd"], optional
         Method for computing off-scores:
-        - "affected_ratio": proportion of off features that became significant
+        - "ratio_affected": proportion of off features that became significant
         - "emd": Earth Mover's Distance in off-feature space
-        by default "affected_ratio"
+        by default "ratio_affected"
     ratio_stats_method : str, optional
-        Statistical test used when ``off_method`` is set to ``"affected_ratio"`` to
+        Statistical test used when ``off_method`` is set to ``"ratio_affected"`` to
         assess significance of changes in off-signature features.
     seed : int, optional
         Random seed for reproducibility in stochastic methods, by default 0
@@ -387,7 +364,7 @@ def measure_phenotypic_activity(
 
     # extract all unique treatment conditions excluding the reference
     treatments = (
-        profiles.filter(pl.col(treatment_col) != treatment_col)
+        profiles.filter(pl.col(treatment_col) != ref_state)
         .select(treatment_col)
         .unique()
         .to_series()
@@ -404,7 +381,9 @@ def measure_phenotypic_activity(
             continue
 
         # extract morphological features for reference condition (excluding metadata)
-        ref_profile = profiles.filter(pl.col(state_col) == ref_state).drop(meta_cols)
+        ref_profile = profiles.filter(pl.col(treatment_col) == ref_state).drop(
+            meta_cols
+        )
 
         # extract morphological features for current treatment condition
         target_profile = profiles.filter(pl.col(treatment_col) == treatment).drop(
@@ -419,20 +398,21 @@ def measure_phenotypic_activity(
             )
 
         # compute distance in on-feature space (expected changes)
-        on_score = calculate_on_score(
+        on_score = calculate_score(
             ref_profile,
             target_profile,
             on_signature,
-            method=on_method,
-            emd_n_threads=emd_n_threads,
+            signature_type="on",
+            on_calculation=on_method,
         )
 
         # compute distance in off-feature space (unintended changes)
-        off_score = calculate_off_score(
+        off_score = calculate_score(
             ref_profile,
             target_profile,
             off_signature,
-            method=off_method,
+            signature_type="off",
+            off_calculation=off_method,
             seed=seed,
         )
 
@@ -444,14 +424,14 @@ def measure_phenotypic_activity(
         scores, schema=["ref_profile", "treatment", "on_score", "off_score"]
     )
 
-    # # rank treatments: prioritize low on-scores, then low off-scores
+    # rank treatments: prioritize low on-scores, then low off-scores
     scores_df = scores_df.sort(
         ["on_score", "off_score"], descending=[False, False]
     ).with_row_index(name="rank", offset=1)
 
-    # # normalize scores if EMD method was used to enable comparison across different
-    # # feature sets
-    scores_df = _normalize_scores_if_emd(
+    # normalize scores if EMD method was used to enable comparison across different
+    # feature sets
+    scores_df = _normalize_scores(
         scores_df,
         target_state,
         on_method=(on_method == "emd"),
