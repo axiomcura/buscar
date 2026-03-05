@@ -626,7 +626,8 @@ def add_cell_id_hash(
 def shuffle_feature_profiles(
     profiles: pl.DataFrame,
     feature_cols: list[str],
-    method: Literal["row", "column"] = "row",
+    method: Literal["row", "column", "label"] = "row",
+    label_col: str | None = None,
     seed: int = 42,
 ) -> pl.DataFrame:
     """
@@ -686,6 +687,14 @@ def shuffle_feature_profiles(
                 pl.Series(name=col, values=shuffled_features[col])
             )
         return shuffled_df
+    elif method == "label":
+        if label_col is None:
+            raise ValueError(
+                "label_col must be specified when using 'label' shuffle method."
+            )
+
+        # return the profiels with
+        return profiles.with_columns(pl.col(label_col).shuffle(seed=seed))
     else:
         raise ValueError(f"Unknown shuffle method: {method}")
 
