@@ -20,8 +20,9 @@ def apply_pca(
     svd_solver="full",
     standardize=False,
     random_state=0,
+    return_explained_variance: bool = False,
     **kwargs,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+) -> pl.DataFrame | tuple[pl.DataFrame, pl.DataFrame]:
     """Apply PCA to the morphological features of the profiles DataFrame.
 
     Parameters
@@ -51,14 +52,19 @@ def apply_pca(
         Default is False.
     random_state : int, optional
         Random state for reproducibility. Default is 0.
+    return_explained_variance : bool, optional
+        If True, return a tuple of ``(pca_profiles, explained_variance_df)``.
+        If False (default), return only ``pca_profiles``.
     **kwargs
         Additional keyword arguments for PCA that can be found here:
         https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html
 
     Returns
     -------
-    pl.DataFrame
-        DataFrame containing the metadata features and the principal components.
+    pl.DataFrame or tuple[pl.DataFrame, pl.DataFrame]
+        By default, returns DataFrame containing metadata and principal components.
+        If ``return_explained_variance`` is True, also returns a second DataFrame
+        with variance statistics per principal component.
 
     """
 
@@ -108,9 +114,9 @@ def apply_pca(
         }
     )
 
-    # concat metadata infromation with principal components
+    # concat metadata information with principal components
     pca_colnames = [f"PC{i + 1}" for i in range(principal_components.shape[1])]
-    return pl.concat(
+    pca_profiles = pl.concat(
         [
             profiles.select(meta_features),  # metadata df
             pl.DataFrame(
@@ -118,7 +124,12 @@ def apply_pca(
             ),  # PCA components df
         ],
         how="horizontal",
-    ), explained_variance_df
+    )
+
+    if return_explained_variance:
+        return pca_profiles, explained_variance_df
+
+    return pca_profiles
 
 
 @beartype

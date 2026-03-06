@@ -5,7 +5,7 @@ Tests for utils.data_utils module
 import polars as pl
 import pytest
 
-from utils.data_utils import add_cell_id_hash
+from buscar.data_utils import add_cell_id_hash
 
 
 # Fixtures

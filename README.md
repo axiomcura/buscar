@@ -29,18 +29,14 @@ buscar has 5 main modules:
 
 ## How to install
 
-### 1. Clone the Repository
-
-Start by cloning the buscar repository and navigating into the project directory:
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/WayScience/buscar.git
 cd buscar
 ```
 
-### 2. Set Up a Conda Environment
-
-Create and activate a dedicated Conda environment for buscar:
+### 2. Create a Python 3.10+ environment
 
 ```bash
 conda create -n buscar python=3.12
@@ -49,18 +45,39 @@ conda activate buscar
 
 ### 3. Install Poetry
 
-Install Poetry within your Conda environment to manage project dependencies:
-
 ```bash
-conda install poetry
+conda install -c conda-forge poetry
 ```
 
-### 4. Install Project Dependencies
+### 4. Install buscar
 
-With Poetry installed and your environment activated, install all required dependencies:
+Core package only:
 
 ```bash
-poetry install
+poetry install --without dev --without notebooks
 ```
 
-This command will set up all packages as specified in the `pyproject.toml` and `poetry.lock` files.
+Package + development tools (pytest, pre-commit):
+
+```bash
+poetry install --with dev --without notebooks
+```
+
+Package + notebook stack:
+
+```bash
+poetry install --with notebooks
+```
+
+### 5. Run tests
+
+```bash
+poetry run pytest
+```
+
+### 6. Build and install wheel with pip (optional release check)
+
+```bash
+poetry build
+pip install dist/*.whl
+```

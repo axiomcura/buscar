@@ -176,3 +176,6 @@ results/
 
 # ignore .vscode settings
 .vscode/
+
+# ignore analytical notebooks
+notebooks*
