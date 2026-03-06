@@ -1,20 +1,65 @@
 #!/usr/bin/env python
 
-# In[ ]:
+# # Leave on gene out analysis
+
+# In[1]:
 
 
 import pathlib
 import sys
 
+import numpy as np
 import polars as pl
 from tqdm import tqdm
 
 sys.path.append("../../")
 from buscar.metrics import measure_phenotypic_activity
 from buscar.signatures import get_signatures
+from utils.data_utils import shuffle_feature_profiles
 from utils.io_utils import load_configs, load_profiles
 
-# In[ ]:
+# In[2]:
+
+
+def shuffle_signatures(
+    on_sig: list[str], off_sig: list[str], all_features: list[str], seed: int = 0
+) -> tuple[list[str], list[str]]:
+    """
+    Breaks biological meaning of on/off signatures by randomly sampling
+    features from the full feature space, while preserving the original
+    on/off size ratio.
+
+    Preserves:
+      - len(on_sig) and len(off_sig)  ← ratio intact
+      - Features drawn from same pool as real signatures
+
+    Breaks:
+      - Which specific features are "on" vs "off"
+      - Any biological grouping derived from KS test
+    """
+    rng = np.random.default_rng(seed)
+
+    n_on = len(on_sig)
+    n_off = len(off_sig)
+
+    # guard: need enough features to fill both without overlap
+    assert n_on + n_off <= len(all_features), (
+        f"Not enough features ({len(all_features)}) to fill "
+        f"on ({n_on}) + off ({n_off}) without replacement"
+    )
+
+    # sample without replacement so on and off don't overlap
+    sampled = rng.choice(all_features, size=n_on + n_off, replace=False)
+
+    shuffled_on = sampled[:n_on].tolist()
+    shuffled_off = sampled[n_on:].tolist()
+
+    return shuffled_on, shuffled_off
+
+
+# setting input and output paths
+
+# In[3]:
 
 
 # set data path
@@ -42,7 +87,7 @@ moa_analysis_output = (results_dir / "moa_analysis").resolve()
 moa_analysis_output.mkdir(exist_ok=True)
 
 
-# In[ ]:
+# In[4]:
 
 
 # load in configs
@@ -52,7 +97,7 @@ meta_feats = feature_space_configs["metadata-features"]
 morph_feats = feature_space_configs["morphology-features"]
 
 
-# In[ ]:
+# In[5]:
 
 
 # load in mitocheck profiles
@@ -76,7 +121,7 @@ mitocheck_df = mitocheck_df.with_columns(
 )
 
 
-# In[ ]:
+# In[6]:
 
 
 labeled_mitocheck_df = mitocheck_df.filter(
@@ -88,9 +133,7 @@ print("Shape of the labeled mitocheck profiles:", labeled_mitocheck_df.shape)
 labeled_mitocheck_df.head()
 
 
-# Generate proportion of cells states per treatment
-
-# In[ ]:
+# In[7]:
 
 
 # Creating a proportion dataframe for all genes and phenotypic classes
@@ -106,6 +149,8 @@ cell_proportion_df = (
 )
 
 
+# Generating shuffled data
+
 # ## Analysis 1: Positive Control Ranking
 #
 # We evaluate whether our on/off morphological signatures can correctly rank genes based on their association with the **Prometaphase** phenotype.
@@ -119,26 +164,44 @@ cell_proportion_df = (
 # 2. **Intermediate activity** — genes with a mixture of Prometaphase and other phenotypes
 # 3. **Low activity** — genes with no Prometaphase phenotype, but other dominant phenotypes
 
-# In[ ]:
+# In[8]:
 
 
+# parameters for the analysis
+shuffle_flag = True
 negcon_state = "Interphase"
 poscon_state = "Prometaphase"
 
+
+# Generate proportion of cells states per treatment
+
+# In[9]:
+
+
+if shuffle_flag:
+    print("Shuffling the mitocheck profiles...")
+    shuffled_labeled_mitocheck_df = shuffle_feature_profiles(
+        profiles=labeled_mitocheck_df,
+        feature_cols=morph_feats,
+        method="column",
+        label_col="Mitocheck_Phenotypic_Class",
+        seed=0,
+    )
+
+
+# In[10]:
+
+
+# select data based on shuffle_flag
+profiles = shuffled_labeled_mitocheck_df if shuffle_flag else labeled_mitocheck_df
+
 # generating negative control profiles (paper states they are interphase)
-# paper states negative controls are interphase profiles
 negcon_profiles = mitocheck_df.filter(
     pl.col("Mitocheck_Phenotypic_Class") == "negcon"
 ).sample(fraction=0.1, seed=0)
 
-# poscon  phenotype of intrest in this case Prometaphase
-poscon_profiles = labeled_mitocheck_df.filter(
-    pl.col("Mitocheck_Phenotypic_Class") == poscon_state
-)
-
-
-# In[ ]:
-
+# poscon phenotype of interest: Prometaphase
+poscon_profiles = profiles.filter(pl.col("Mitocheck_Phenotypic_Class") == poscon_state)
 
 # generate on and off signatures with pooled negcon and poscon profiles
 on_sigs, off_sigs, _ = get_signatures(
@@ -149,9 +212,12 @@ on_sigs, off_sigs, _ = get_signatures(
     test_method="ks_test",
 )
 
-# measure phenotypic activity of the signatures
+if shuffle_flag:
+    # shuffle the on and off signatures while preserving their sizes
+    on_sigs, off_sigs = shuffle_signatures(on_sigs, off_sigs, morph_feats, seed=0)
+
 prometa_phase_ranks = measure_phenotypic_activity(
-    profiles=pl.concat([negcon_profiles, poscon_profiles]),
+    profiles=profiles,
     meta_cols=meta_feats,
     on_signature=on_sigs,
     off_signature=off_sigs,
@@ -159,17 +225,16 @@ prometa_phase_ranks = measure_phenotypic_activity(
     target_state=negcon_state,
     treatment_col="Metadata_Gene",
     state_col="Mitocheck_Phenotypic_Class",
-    emd_n_threads=-1,
+    on_method="emd",
+    off_method="ratio_affected",
+    n_threads=-1,
+    raw_emd_scores=True,
 )
 
 # remove negcon and poscon from the ranks dataframe
 prometa_phase_ranks = prometa_phase_ranks.filter(
     (pl.col("treatment") != "negcon") & (pl.col("treatment") != "poscon")
 )
-
-
-# In[ ]:
-
 
 # add cell proportion information to the prometa_phase_ranks dataframe
 prometa_phase_ranks = prometa_phase_ranks.join(
@@ -181,6 +246,9 @@ prometa_phase_ranks = prometa_phase_ranks.join(
     how="left",
 ).with_columns(pl.col("proportion").fill_null(0.0))
 
+# save the prometa_phase_ranks dataframe to a parquet file
+output_filename = f"{'shuffled' if shuffle_flag else 'original'}_interphase_v_prometa_phase_ranks.parquet"
+prometa_phase_ranks.write_parquet(moa_analysis_output / output_filename)
 prometa_phase_ranks
 
 
@@ -197,10 +265,11 @@ prometa_phase_ranks
 # - **Lower scores = good** — the held-out gene's cells are morphologically similar to Prometaphase, indicating genuine phenotypic signal.
 # - If data leakage were present (i.e., the gene's own cells contributed to the signature), scores would be artificially low. Under the LOGO design, **scores that remain low confirm the signal is real** — those cells genuinely resemble Prometaphase even when they played no role in building the signature.
 #
+# To make a negative control baseline, we shuffled the lablels and the on and off signature scores. For the on and off signature scores we retained the same s
 
 # Get cell state information
 
-# In[ ]:
+# In[11]:
 
 
 cell_states = (
@@ -218,29 +287,52 @@ cell_states = (
 
 # Caclulate the proportion of cell states that makes up a specific gene
 
-# In[ ]:
+# In[12]:
 
+
+# parameters for the analysis
+shuffle_flag = True
+seed = 0
+
+
+# In[13]:
+
+
+if shuffle_flag:
+    print("Shuffling the mitocheck profiles...")
+    shuffled_mitocheck_df = shuffle_feature_profiles(
+        profiles=labeled_mitocheck_df,
+        feature_cols=morph_feats,
+        method="column",
+        label_col="Mitocheck_Phenotypic_Class",
+        seed=seed,
+    )
+
+
+# In[14]:
+
+
+# select data based on shuffle_flag
+profiles = shuffled_mitocheck_df if shuffle_flag else labeled_mitocheck_df
 
 on_off_sigs = []
-min_cells = 2  # EMD requires at least 2 samples
+min_cells = 2
 
 results_df = []
 for cell_state in tqdm(cell_states, desc="Processing cell states"):
-    # poscon  phenotype of intrest in this case Prometaphase
-    poscon_profiles = labeled_mitocheck_df.filter(
+    # poscon phenotype of interest for this cell state
+    poscon_profiles = profiles.filter(
         pl.col("Mitocheck_Phenotypic_Class") == cell_state
     )
 
-    # generate that are associated with the prometaphase
+    # genes that are associated with this cell state
     genes_associated_with_state = (
         poscon_profiles.select("Metadata_Gene").unique().to_series().to_list()
     )
 
-    # genes that are not associated with prometaphase
+    # genes that are not associated with this cell state
     genes_not_associated_with_state = (
-        labeled_mitocheck_df.filter(
-            ~pl.col("Metadata_Gene").is_in(genes_associated_with_state)
-        )
+        profiles.filter(~pl.col("Metadata_Gene").is_in(genes_associated_with_state))
         .select("Metadata_Gene")
         .unique()
         .to_series()
@@ -255,12 +347,12 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
     ):
         # filter the target profiles to only include cells treated with the current
         # gene of interest
-        target_profiles = poscon_profiles.filter(pl.col("Metadata_Gene") == gene)
+        heldout_df = poscon_profiles.filter(pl.col("Metadata_Gene") == gene)
 
         # skip genes with too few cells (EMD requires >= 2 samples)
-        if target_profiles.height < min_cells:
+        if heldout_df.height < min_cells:
             print(
-                f"Skipping gene '{gene}': only {target_profiles.height} cell(s), need >= "
+                f"Skipping gene '{gene}': only {heldout_df.height} cell(s), need >= "
                 f"{min_cells}"
             )
             # create an empty dataframe with the same structure as the
@@ -278,27 +370,45 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
             associated_gene_scores.append(associated_gene_score)
             continue
 
-        # remove the current gene's Prometaphase cells from the positive control profiles
-        # to prevent data leakage: the gene being ranked must not influence its own signature
+        # remove the current gene's cells from the positive control pool
+        # to prevent data leakage: the gene being ranked must not influence its own
+        # signature
         state_pool = poscon_profiles.filter(pl.col("Metadata_Gene") != gene)
 
         # generate on and off signatures (leave-one-out: current gene's cells excluded)
+        morph_feats = feature_space_configs["morphology-features"]
         on_sig, off_sig, _ = get_signatures(
             state_pool,
             negcon_profiles,
-            morph_feats=feature_space_configs["morphology-features"],
+            morph_feats=morph_feats,
             test_method="ks_test",
             p_threshold=0.05,
+            seed=seed,
         )
 
-        # if not signature was found, skip the gene
+        # concatenating negcon and the gene that has been held out
+        test_df = pl.concat([negcon_profiles, heldout_df])
+
+        if shuffle_flag:
+            # shuffle the on and off signatures and shuffle
+            on_sig, off_sig = shuffle_signatures(
+                on_sig, off_sig, morph_feats, seed=seed
+            )
+            test_df = shuffle_feature_profiles(
+                profiles=test_df,
+                feature_cols=morph_feats,
+                method="column",
+                seed=seed,
+            )
+
+        # if no signature was found, skip the gene
         if len(on_sig) == 0 or len(off_sig) == 0:
             print(f"skipping {gene}")
             continue
 
         # rank the gene using the generated signatures
         associated_gene_score = measure_phenotypic_activity(
-            profiles=pl.concat([negcon_profiles, target_profiles]),
+            profiles=test_df,
             meta_cols=feature_space_configs["metadata-features"],
             on_signature=on_sig,
             off_signature=off_sig,
@@ -306,23 +416,21 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
             ref_state=cell_state,
             treatment_col="Metadata_Gene",
             state_col="Mitocheck_Phenotypic_Class",
-            emd_n_threads=-1,
+            n_threads=-1,
+            raw_emd_scores=True,
         )
 
-        # caclulate the proportion of cells that make up this phenotype with the
+        # calculate the proportion of cells that make up this phenotype with the
         # current gene perturbation
         try:
             cell_state_proportion = cell_proportion_df.filter(
                 (pl.col("Metadata_Gene") == gene)
                 & (pl.col("Mitocheck_Phenotypic_Class") == cell_state)
             )["proportion"][0]
-        except IndexError as e:
-            print(
-                f"Index error caught for gene '{gene}' and cell state '{cell_state}': {e}"
-            )
+        except IndexError:
             cell_state_proportion = 0.0
 
-        # remove negcon scores we are only intrested of the scores of the gene
+        # remove negcon scores; we are only interested in the scores of the gene
         associated_gene_score = associated_gene_score.filter(
             pl.col("treatment") != "negcon"
         )
@@ -332,33 +440,45 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
             pl.lit(cell_state_proportion).alias("proportion"),
         )
 
-        # store on and off signatures and
+        # store on and off signatures
         on_off_sigs.append((cell_state, on_sig, off_sig))
         associated_gene_scores.append(associated_gene_score)
 
     associated_gene_scores = pl.concat(associated_gene_scores)
 
-    # Step 2: ranking genes that are not associated with the prometaphase state
+    # Step 2: rank genes that are not associated with this cell state
 
-    # creating on and off sigs with pooled poscon cell state
+    # create on and off sigs with pooled poscon cell state
     on_sig, off_sig, _ = get_signatures(
         ref_profiles=poscon_profiles,
         exp_profiles=negcon_profiles,
         morph_feats=morph_feats,
         test_method="ks_test",
         p_threshold=0.05,
+        seed=seed,
     )
 
-    # rank all treatments that are not associated with the prometaphase state using the pooled poscon signatures
+    test_non_associated_df = pl.concat(
+        [
+            poscon_profiles,
+            profiles.filter(
+                pl.col("Metadata_Gene").is_in(genes_not_associated_with_state)
+            ),
+        ]
+    )
+    if shuffle_flag:
+        on_sig, off_sig = shuffle_signatures(on_sig, off_sig, morph_feats, seed=seed)
+        test_non_associated_df = shuffle_feature_profiles(
+            profiles=test_non_associated_df,
+            feature_cols=morph_feats,
+            method="column",
+            seed=seed,
+        )
+
+    # rank all treatments that are not associated with this cell state using the pooled
+    # poscon signatures
     not_associated_gene_scores = measure_phenotypic_activity(
-        profiles=pl.concat(
-            [
-                poscon_profiles,
-                mitocheck_df.filter(
-                    pl.col("Metadata_Gene").is_in(genes_not_associated_with_state)
-                ),
-            ]
-        ),
+        profiles=test_non_associated_df,
         meta_cols=meta_feats,
         on_signature=on_sig,
         off_signature=off_sig,
@@ -366,7 +486,9 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
         ref_state=cell_state,
         treatment_col="Metadata_Gene",
         state_col="Mitocheck_Phenotypic_Class",
-        emd_n_threads=-1,
+        n_threads=-1,
+        raw_emd_scores=True,
+        seed=seed,
     )
 
     # remove scores of genes that are associated with the cell state
@@ -374,8 +496,7 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
         pl.col("treatment").is_in(genes_not_associated_with_state)
     )
 
-    # add proportion of cells, if a gene does not have any cells in the cell state,
-    # assign a proportion of 0
+    # add proportion of cells; if a gene has no cells in this state, assign 0
     not_associated_gene_scores = not_associated_gene_scores.join(
         cell_proportion_df.select(
             ["Metadata_Gene", "Mitocheck_Phenotypic_Class", "proportion"]
@@ -385,11 +506,12 @@ for cell_state in tqdm(cell_states, desc="Processing cell states"):
         how="left",
     ).with_columns(pl.col("proportion").fill_null(0.0))
 
-    # final result
+    # final result for this cell state
     results_df.append(
         pl.concat([associated_gene_scores, not_associated_gene_scores], how="vertical")
     )
 
 # step 3: store results
 results_df = pl.concat(results_df)
-results_df.write_parquet(moa_analysis_output / "mitocheck_moa_analysis_results.parquet")
+output_filename = f"{'shuffled' if shuffle_flag else 'original'}_mitocheck_moa_analysis_results.parquet"
+results_df.write_parquet(moa_analysis_output / output_filename)

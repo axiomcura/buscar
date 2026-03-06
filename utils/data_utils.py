@@ -674,19 +674,9 @@ def shuffle_feature_profiles(
 
     # column-wise shuffling
     elif method == "column":
-        shuffled_features = {}
-        for col in feature_cols:
-            values = profiles[col].to_numpy().copy()
-            np.random.shuffle(values)
-            shuffled_features[col] = values
-
-        # Build the shuffled dataframe
-        shuffled_df = profiles.select(meta_cols)
-        for col in feature_cols:
-            shuffled_df = shuffled_df.with_columns(
-                pl.Series(name=col, values=shuffled_features[col])
-            )
-        return shuffled_df
+        return profiles.with_columns(
+            [pl.col(col).shuffle(seed=seed + i) for i, col in enumerate(feature_cols)]
+        )
     elif method == "label":
         if label_col is None:
             raise ValueError(

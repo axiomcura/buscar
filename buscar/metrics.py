@@ -98,6 +98,7 @@ def compute_earth_movers_distance(
     profile2: pl.DataFrame,
     subsample_size: int | None = None,
     seed: int | None = 0,
+    n_threads: int = 1,
 ) -> float:
     """Computing the earth mover's distance between two profiles
 
@@ -116,9 +117,22 @@ def compute_earth_movers_distance(
     float
         Earth Mover's Distance (Wasserstein distance) between the two profiles
     """
+
+    # if n_threads is -1, change varaible to "max" (use all available threads)
+    # docs: https://pythonot.github.io/all.html#ot.emd2
+    if n_threads == -1:
+        n_threads = "max"
+    elif n_threads < 1:
+        raise ValueError("n_threads must be a positive integer or -1 for max threads.")
+
     # Convert the profiles to numpy arrays
     p1 = profile1.to_numpy()
     p2 = profile2.to_numpy()
+
+    # check if either profile is empty and raise an error if so
+    # this avoid division by zero errors when computing the EMD
+    if profile1.is_empty() or profile2.is_empty():
+        raise ValueError("Both profiles must contain at least one row.")
 
     # Subsample if requested
     if subsample_size is not None:
@@ -137,7 +151,7 @@ def compute_earth_movers_distance(
     target_weights = np.ones(p2.shape[0]) / p2.shape[0]
 
     # Compute the Earth Mover's Distance (EMD)
-    emd_value = ot.emd2(ref_weights, target_weights, M)
+    emd_value = ot.emd2(ref_weights, target_weights, M, numThreads=n_threads)
 
     return emd_value
 
@@ -175,7 +189,10 @@ def affected_off_features_ratio(
 
     # generate signatures for the off features and count how many are affected
     affected_off_sig, _, _ = get_signatures(
-        ref_profiles, target_profiles, morph_feats=off_signature, test_method=method
+        ref_profiles,
+        target_profiles,
+        morph_feats=off_signature,
+        test_method=method,
     )
 
     return len(affected_off_sig) / len(off_signature)
@@ -190,6 +207,7 @@ def calculate_score(
     on_calculation: Literal["emd"] = "emd",
     off_calculation: Literal["ratio_affected", "emd"] = "ratio_affected",
     ratio_stats_method: str = "ks_test",
+    n_threads: int = 1,
     seed: int = 0,
 ) -> float:
     """Calculate on or off score for a given morphological signature.
@@ -233,6 +251,7 @@ def calculate_score(
             return compute_earth_movers_distance(
                 ref_profile.select(pl.col(signature)),
                 target_profile.select(pl.col(signature)),
+                n_threads=n_threads,
             )
         else:
             raise ValueError(
@@ -265,10 +284,13 @@ def measure_phenotypic_activity(
     ref_state: str,
     target_state: str,
     treatment_col: str,
+    state_col: str | None = None,
     on_method: Literal["emd"] = "emd",
     off_method: Literal["ratio_affected", "emd"] = "ratio_affected",
+    raw_emd_scores: bool = False,
     ratio_stats_method: str = "ks_test",
     seed: int = 0,
+    n_threads: int = 1,
 ) -> pl.DataFrame:
     """Measure phenotypic activity by comparing morphological profiles across
     conditions.
@@ -302,6 +324,9 @@ def measure_phenotypic_activity(
         Value in treatment_col representing the desired phenotypic state.
     treatment_col : str, optional
         Column name containing treatment identifiers, by default "Metadata_treatment"
+    state_col : str, optional
+        Column containing cell state or treatment identifier. If None, defaults to
+        treatment_col indicating the state of intrest is within the treatment_col.
     on_method : Literal["emd"], optional
         Method for computing on-scores. Currently only Earth Mover's Distance (EMD)
         is supported, by default "emd"
@@ -381,9 +406,7 @@ def measure_phenotypic_activity(
             continue
 
         # extract morphological features for reference condition (excluding metadata)
-        ref_profile = profiles.filter(pl.col(treatment_col) == ref_state).drop(
-            meta_cols
-        )
+        ref_profile = profiles.filter(pl.col(state_col) == ref_state).drop(meta_cols)
 
         # extract morphological features for current treatment condition
         target_profile = profiles.filter(pl.col(treatment_col) == treatment).drop(
@@ -404,6 +427,8 @@ def measure_phenotypic_activity(
             on_signature,
             signature_type="on",
             on_calculation=on_method,
+            n_threads=n_threads,
+            seed=seed,
         )
 
         # compute distance in off-feature space (unintended changes)
@@ -412,6 +437,7 @@ def measure_phenotypic_activity(
             target_profile,
             off_signature,
             signature_type="off",
+            ratio_stats_method=ratio_stats_method,
             off_calculation=off_method,
             seed=seed,
         )
@@ -431,11 +457,12 @@ def measure_phenotypic_activity(
 
     # normalize scores if EMD method was used to enable comparison across different
     # feature sets
-    scores_df = _normalize_scores(
-        scores_df,
-        target_state,
-        on_method=(on_method == "emd"),
-        off_method=(off_method == "emd"),
-    )
+    if not raw_emd_scores:
+        return _normalize_scores(
+            scores_df,
+            target_state,
+            on_method=(on_method == "emd"),
+            off_method=(off_method == "emd"),
+        )
 
     return scores_df
