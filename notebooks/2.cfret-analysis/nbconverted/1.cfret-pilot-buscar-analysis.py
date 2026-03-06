@@ -182,7 +182,7 @@ treatment_scores = measure_phenotypic_activity(
     ref_state=healthy_label,
     target_state=failing_label,
     on_method="emd",
-    off_method="ratio_affected",
+    off_method="affected_ratio",
     ratio_stats_method=on_off_signatures_method,
     treatment_col=treatment_col,
 )
@@ -191,3 +191,9 @@ treatment_scores = measure_phenotypic_activity(
 treatment_scores.write_csv(
     phenotypic_scores_results_dir / "cfret_pilot_phenotypic_scores.csv"
 )
+
+
+# In[8]:
+
+
+treatment_scores
