@@ -66,6 +66,12 @@ conda install -c conda-forge poetry
 poetry run pytest
 ```
 
+Run tests with coverage:
+
+```bash
+poetry run pytest --cov=buscar --cov-report=term-missing
+```
+
 5. Build and install wheel with pip (optional release check)
 
 ```bash
