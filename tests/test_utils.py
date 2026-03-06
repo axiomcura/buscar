@@ -147,7 +147,7 @@ class TestAddCellIdHash:
         assert unique_ids == len(result)
 
     def test_with_identical_rows(self):
-        """Test that identical rows produce different hashes (because of row position)"""
+        """Test behavior for identical rows and row-position-independent hashes."""
         # Create DataFrame with identical rows
         identical_profiles = pl.DataFrame(
             {

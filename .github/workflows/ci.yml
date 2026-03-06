@@ -6,7 +6,33 @@ on:
   pull_request:
 
 jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+
+      - name: Install dependencies
+        run: poetry install -E dev --no-interaction
+
+      - name: Run pre-commit (required)
+        run: poetry run pre-commit run --all-files --show-diff-on-failure
+
   test-build:
+    needs: pre-commit
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,7 +57,7 @@ jobs:
           installer-parallel: true
 
       - name: Install dependencies
-        run: poetry install --with dev --no-interaction
+        run: poetry install -E dev --no-interaction
 
       - name: Run tests
         run: poetry run pytest

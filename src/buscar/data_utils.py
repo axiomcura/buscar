@@ -19,7 +19,8 @@ def add_cell_id_hash(
     seed : int, optional
         Seed mixed into each row signature for reproducible alternative hashes.
     force : bool, optional
-        If ``False`` and ``Metadata_cell_id`` already exists, the input is returned unchanged.
+        If ``False`` and ``Metadata_cell_id`` already exists, the input is
+        returned unchanged.
 
     Returns
     -------

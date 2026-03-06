@@ -2,6 +2,14 @@
 requires = ["poetry-core>=1.8.0"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_optional = true
+ignore_missing_imports = true
+
 [tool.poetry]
 name = "buscar"
 version = "0.1.0"
@@ -10,8 +18,7 @@ authors = ["Erik Serrano <erikishere3@gmail.com>"]
 readme = "README.md"
 license = "MIT"
 packages = [
-  {include = "buscar"},
-  {include = "utils"}
+  {include = "buscar", from = "src"}
 ]
 keywords = ["single-cell", "drug-screening", "image-profiling", "phenotypic-screening"]
 
@@ -25,31 +32,38 @@ scikit-learn = ">=1.6.1,<2.0.0"
 scipy = ">=1.15.3,<2.0.0"
 statsmodels = ">=0.14.4,<0.15.0"
 umap-learn = "^0.5.9.post2"
+igraph = {version = "^0.11.9", optional = true}
+ipykernel = {version = "^6.29.5", optional = true}
+jupyter = {version = "^1.1.1", optional = true}
+leidenalg = {version = "^0.10.2", optional = true}
+louvain = {version = "^0.8.2", optional = true}
+matplotlib = {version = ">=3.10.3,<4.0.0", optional = true}
+mypy = {version = "^1.14.1", optional = true}
+narwhals = {version = "^2.4.0", optional = true}
+optuna = {version = "^4.5.0", optional = true}
+pandas = {version = ">=2.2.0,<3.0.0", optional = true}
+pre-commit = {version = "^4.2.0", optional = true}
+pycytominer = {version = ">=1.2.3,<2.0.0", optional = true}
+pytest = {version = "^8.4.1", optional = true}
+ruff = {version = "^0.8.1", optional = true}
+scanpy = {version = "^1.11.4", optional = true}
+tqdm = {version = "^4.67.1", optional = true}
 
-[tool.poetry.group.dev.dependencies]
-pre-commit = "^4.2.0"
-pandas = ">=2.2.0,<3.0.0"
-pytest = "^8.4.1"
-
-[tool.poetry.group.notebooks]
-optional = true
-
-[tool.poetry.group.notebooks.dependencies]
-igraph = "^0.11.9"
-ipykernel = "^6.29.5"
-jupyter = "^1.1.1"
-leidenalg = "^0.10.2"
-louvain = "^0.8.2"
-matplotlib = ">=3.10.3,<4.0.0"
-narwhals = "^2.4.0"
-optuna = "^4.5.0"
-pycytominer = ">=1.2.3,<2.0.0"
-scanpy = "^1.11.4"
-tqdm = "^4.67.1"
+[tool.poetry.extras]
+dev = ["mypy", "pandas", "pre-commit", "pytest", "ruff"]
+viz = ["ipykernel", "jupyter", "matplotlib", "narwhals", "tqdm"]
+gpu = ["igraph", "leidenalg", "louvain", "optuna", "pycytominer", "scanpy"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

@@ -38,7 +38,8 @@ def apply_pca(
         to be explained by the selected components (default is 0.95). If an integer is
         provided, it specifies the exact number of principal components to keep.
     svd_solver : str, optional
-        The SVD solver to use for PCA. Default is 'full'. Options include 'auto', 'full',
+        The SVD solver to use for PCA. Default is 'full'.
+        Options include 'auto', 'full',
         'arpack', and 'randomized'.  Note: The behavior of the 'n_components' parameter
         depends on its type:
         - If a float between 0 and 1 is provided (e.g., var_explained), it specifies
@@ -110,7 +111,9 @@ def apply_pca(
             "PC": [f"PC{i + 1}" for i in range(len(pca.explained_variance_ratio_))],
             "Metadata_explained_variance": pca.explained_variance_,
             "Metadata_explained_variance_ratio": pca.explained_variance_ratio_,
-            "Metadata_cumulative_explained_variance_ratio": pca.explained_variance_ratio_.cumsum(),
+            "Metadata_cumulative_explained_variance_ratio": (
+                pca.explained_variance_ratio_.cumsum()
+            ),
         }
     )
 
@@ -158,15 +161,18 @@ def apply_umap(
         Number of UMAP components to keep. Default is 2.
     n_neighbors : int, optional
         The size of local neighborhood (in terms of number of neighboring sample points)
-        used for manifold approximation. Larger values result in more global views of the
-        manifold, while smaller values result in more local data being preserved. Default is 15.
+        used for manifold approximation. Larger values result in more
+        global views of the manifold, while smaller values result in more
+        local data being preserved. Default is 15.
     min_dist : float, optional
-        The effective minimum distance between embedded points. Smaller values will result
-        in a more clustered/clumped embedding where nearby points on the manifold are drawn
-        closer together, while larger values will result in a more even dispersal of points.
+        The effective minimum distance between embedded points. Smaller
+        values will result in a more clustered/clumped embedding where
+        nearby points on the manifold are drawn closer together, while
+        larger values will result in a more even dispersal of points.
         Default is 0.1.
     metric : str, optional
-        The metric to use to compute distances in high dimensional space. Default is 'euclidean'.
+        The metric to use to compute distances in high dimensional space.
+        Default is 'euclidean'.
         See UMAP documentation for other options.
     random_state : int, optional
         Random state for reproducibility. Default is 0.

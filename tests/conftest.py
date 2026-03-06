@@ -1,11 +1,9 @@
-"""
-Pytest configuration file for test suite.
-Adds the project root to sys.path so imports work correctly.
-"""
+"""Pytest configuration for local src-layout imports."""
 
 import sys
 from pathlib import Path
 
-# Add project root to Python path
+# Add src directory to Python path for local test execution.
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+src_dir = project_root / "src"
+sys.path.insert(0, str(src_dir))

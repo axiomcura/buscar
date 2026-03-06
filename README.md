@@ -23,59 +23,50 @@ buscar has 5 main modules:
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Signatures    | Identifies morphological features between two profiles (e.g., healthy vs. disease). Features altered by perturbations are "on-morphology signatures"; unchanged features are "off-morphological features." This distinction helps pinpoint impacted features and track off-target effects. |
 | Heterogeneity | Assesses heterogeneity within single-cell populations using (1) dimensionality reduction (e.g., UMAP or PCA), and (2) clustering. Cells are mapped back to their original space to assign cluster labels.                                                                                  |
-| Refinement    | Evaluates clusters from the Heterogeneity module to remove uninformative or small clusters (e.g., those with few cells), which can skew phenotypic measurements due to label imbalance.                                                                                                    |
 | Activity      | Measures the phenotypic activity of selected treatment groups versus controls using both on-morphology and off-morphological signatures. Produces two scores: one for on-morphology activity, and one for off-morphology activity.                                                         |
 | Hits          | Identifies compounds that perform well based on both on-morphology and off-morphological activity scores from the Activity module.                                                                                                                                                         |
 
 ## How to install
 
-### 1. Clone the repository
+### Option 1: Use Buscar (pip install)
+
+If you only want to use the package, install it directly from PyPI:
+
+```bash
+python -m pip install buscar
+```
+
+### Option 2: Develop Buscar (clone + Poetry)
+
+If you want to modify code, run tests, or contribute:
+
+1. Clone the repository
 
 ```bash
 git clone https://github.com/WayScience/buscar.git
 cd buscar
 ```
 
-### 2. Create a Python 3.10+ environment
+2. Create a Python 3.10+ environment
 
 ```bash
 conda create -n buscar python=3.12
 conda activate buscar
 ```
 
-### 3. Install Poetry
+3. Install Poetry
 
 ```bash
 conda install -c conda-forge poetry
 ```
 
-### 4. Install buscar
-
-Core package only:
-
-```bash
-poetry install --without dev --without notebooks
-```
-
-Package + development tools (pytest, pre-commit):
-
-```bash
-poetry install --with dev --without notebooks
-```
-
-Package + notebook stack:
-
-```bash
-poetry install --with notebooks
-```
-
-### 5. Run tests
+4. Run tests
 
 ```bash
 poetry run pytest
 ```
 
-### 6. Build and install wheel with pip (optional release check)
+5. Build and install wheel with pip (optional release check)
 
 ```bash
 poetry build

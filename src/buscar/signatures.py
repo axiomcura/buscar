@@ -27,8 +27,9 @@ from statsmodels.stats.weightstats import ttest_ind
 def apply_mann_whitney_u_test(
     ref_profiles: pl.DataFrame, exp_profiles: pl.DataFrame, morph_feats: list[str]
 ) -> pl.DataFrame:
-    """Perform Mann-Whitney U test for each feature in the provided profiles and return a
-    DataFrame with p-values.
+    """Perform Mann-Whitney U test for each feature in the provided profiles.
+
+    Return a DataFrame with p-values.
 
     The Mann-Whitney U test is a non-parametric statistical test that compares two
     independent samples to determine if they come from the same distribution. The test
@@ -274,9 +275,11 @@ def apply_ks_test(
 ) -> pl.DataFrame:
     """Perform KS-test for each feature in the morphology profiles and return p-values.
 
-    This function performs a Kolmogorov-Smirnov test for each feature in the morphology profiles
-    and returns a DataFrame containing feature names and raw p-values. P-value correction and
-    significance thresholding are not handled in this function and should be applied externally,
+    This function performs a Kolmogorov-Smirnov test for each feature
+    in the morphology profiles and returns a DataFrame containing
+    feature names and raw p-values. P-value correction and
+    significance thresholding are not handled in this function and
+    should be applied externally,
     for example in the `get_signatures` function.
 
     Parameters

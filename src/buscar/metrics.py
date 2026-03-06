@@ -1,8 +1,9 @@
-"""
-This module provides metrics for quantifying phenotypic activity, particularly by comparing
-two morphological signatures ("on" and "off"). These signatures represent distinct sets of
-features within morphological profiles, enabling the measurement of differences between
-reference and experimental conditions.
+"""Metrics for quantifying phenotypic activity.
+
+This module compares two morphological signatures ("on" and "off").
+These signatures represent distinct sets of features within morphological
+profiles, enabling the measurement of differences between reference and
+experimental conditions.
 """
 
 from typing import Literal
@@ -164,7 +165,8 @@ def affected_off_features_ratio(
     off_signature : list[str]
         List of feature names that constitute the off-morphological signature.
     method : str, optional
-        Statistical test method to use for determining significance, by default "ks_test"
+        Statistical test method to use for determining significance,
+        by default "ks_test"
 
     Returns
     -------
@@ -192,11 +194,13 @@ def calculate_off_score(
     """Calculating off scores
 
     To calculate the off scores, we search for features within the
-    off-morphological signatures that have become significant. If so, this indicates that
-    the treatment has affected some morphological features that were not affected prior.
+    off-morphological signatures that have become significant. If so,
+    this indicates that the treatment has affected some morphological
+    features that were not affected prior.
 
-    The equation is (true off-morphological signatures / total off-morphological signatures).
-    This ratio tracks whether the treatment induces changes in off-morphological features.
+    The equation is (true off-morphological signatures / total
+    off-morphological signatures). This ratio tracks whether the
+    treatment induces changes in off-morphological features.
 
     Parameters
     ----------
@@ -207,7 +211,8 @@ def calculate_off_score(
     off_signature : list[str]
         List of feature names that constitute the off-morphological signature.
     method : str, optional
-        Statistical test method to use for determining significance, by default "ks_test"
+        Statistical test method to use for determining significance,
+        by default "ks_test"
     ratio_stats_method : str, optional
         Statistical test used when ``method`` is set to ``"affected_ratio"`` to assess
         significance of changes in off-signature features.
@@ -215,7 +220,8 @@ def calculate_off_score(
     Returns
     -------
     float
-        Off score indicating the proportion of off features that have become significant.
+        Off score indicating the proportion of off features that have
+        become significant.
     """
 
     # apply earth movers distance
@@ -241,10 +247,11 @@ def calculate_on_score(
 ) -> float:
     """Calculate on score
 
-    To calculate the on score, we measure the distance between the reference and target
-    profiles in the on-morphological signature space. A lower on score indicates that the
-    target profile is more similar to the reference profile in terms of the features that
-    are expected to change.
+    To calculate the on score, we measure the distance between the
+    reference and target profiles in the on-morphological signature
+    space. A lower on score indicates that the target profile is more
+    similar to the reference profile in terms of the features that are
+    expected to change.
 
     Parameters
     ----------
