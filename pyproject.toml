@@ -2,6 +2,51 @@
 requires = ["poetry-core>=1.8.0"]
 build-backend = "poetry.core.masonry.api"
 
+[project]
+name = "buscar"
+version = "0.1.0"
+description = "A Python framework for prioritizing compounds in high-content imaging drug screening using single-cell profiles."
+authors = [{name = "Erik Serrano", email = "erikishere3@gmail.com"}]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10,<3.14"
+keywords = ["single-cell", "drug-screening", "image-profiling", "phenotypic-screening"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+  "beartype>=0.21.0,<0.22.0",
+  "numpy>=2.2.5,<3.0.0",
+  "polars>=1.29.0,<2.0.0",
+  "pot>=0.9.5,<0.10.0",
+  "scikit-learn>=1.6.1,<2.0.0",
+  "scipy>=1.15.3,<2.0.0",
+  "statsmodels>=0.14.4,<0.15.0",
+  "umap-learn>=0.5.9",
+  "igraph>=0.11.9", 
+  "leidenalg>=0.10.2", 
+  "louvain>=0.8.2", 
+  "optuna>=4.5.0", 
+  "pycytominer>=1.2.3,<2.0.0", 
+  "scanpy>=1.11.4"
+]
+
+[project.optional-dependencies]
+dev = ["pre-commit>=4.2.0", "pytest>=8.4.1", "pytest-cov>=6.0.0", "ruff>=0.8.1"]
+
+[project.urls]
+Homepage = "https://github.com/WayScience/buscar"
+Repository = "https://github.com/WayScience/buscar"
+Issues = "https://github.com/WayScience/buscar/issues"
+
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
@@ -19,16 +64,9 @@ strict_optional = true
 ignore_missing_imports = true
 
 [tool.poetry]
-name = "buscar"
-version = "0.1.0"
-description = "A Python framework for prioritizing compounds in high-content imaging drug screening using single-cell profiles."
-authors = ["Erik Serrano <erikishere3@gmail.com>"]
-readme = "README.md"
-license = "MIT"
 packages = [
   {include = "buscar", from = "src"}
 ]
-keywords = ["single-cell", "drug-screening", "image-profiling", "phenotypic-screening"]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
@@ -58,10 +96,6 @@ ruff = {version = "^0.8.1", optional = true}
 scanpy = {version = "^1.11.4", optional = true}
 tqdm = {version = "^4.67.1", optional = true}
 
-[tool.poetry.extras]
-dev = ["mypy", "pandas", "pre-commit", "pytest", "pytest-cov", "ruff"]
-viz = ["ipykernel", "jupyter", "matplotlib", "narwhals", "tqdm"]
-gpu = ["igraph", "leidenalg", "louvain", "optuna", "pycytominer", "scanpy"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
