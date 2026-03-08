@@ -113,13 +113,8 @@ def load_group_stratified_data(
 # In[3]:
 
 
-# setting data path
-data_dir = pathlib.Path("../0.download-data/data").resolve(strict=True)
-download_module_results_dir = pathlib.Path("../0.download-data/results").resolve(
-    strict=True
-)
-
 # setting directory where all the single-cell profiles are stored
+data_dir = pathlib.Path.cwd() / "data"
 profiles_dir = (data_dir / "sc-profiles").resolve(strict=True)
 
 cpjump1_data_path = (
@@ -131,11 +126,6 @@ cpjump1_data_path = (
 shared_features_config_path = (
     profiles_dir / "cpjump1" / "feature_selected_sc_qc_features.json"
 ).resolve(strict=True)
-
-# setting cpjump1 data dir
-cpjump_crispr_data_dir = (data_dir / "sc-profiles" / "cpjump1-crispr-negcon").resolve()
-cpjump_crispr_data_dir.mkdir(exist_ok=True)
-
 
 # setting negative control
 negcon_data_dir = (profiles_dir / "cpjump1" / "negcon").resolve()
@@ -175,7 +165,7 @@ for seed_val in range(10):
 
     # save the file
     subsampled_df.write_parquet(
-        negcon_data_dir / f"cpjump1_crispr_negcon_seed{seed_val}.parquet"
+        negcon_data_dir / f"cpjump1_compound_negcon_seed{seed_val}.parquet"
     )
 
 

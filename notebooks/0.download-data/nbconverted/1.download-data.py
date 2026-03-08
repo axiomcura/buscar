@@ -2,7 +2,7 @@
 
 # # Downloading Single-Cell Profiles
 #
-# This notebook focuses on downloading metadata and single-cell profiles from three key datasets:
+# This notebook downloading metadata and single-cell profiles from three key datasets:
 #
 # 1. **CPJUMP1 Pilot Dataset** ([link](https://github.com/jump-cellpainting/2024_Chandrasekaran_NatureMethods_CPJUMP1)): Metadata is downloaded and processed to identify and organize plates containing wells treated with compound perturbations for downstream analysis.
 # 2. **MitoCheck Dataset**: Normalized and feature-selected single-cell profiles are downloaded for further analysis.
@@ -37,7 +37,7 @@ pert_type = "compound"
 
 
 # setting config path
-config_path = pathlib.Path("../nb-configs.yaml").resolve(strict=True)
+config_path = pathlib.Path("dl-configs.yaml").resolve(strict=True)
 
 # setting results setting a data directory
 data_dir = pathlib.Path("./data").resolve()
@@ -69,7 +69,7 @@ cfret_dir.mkdir(exist_ok=True)
 #
 # For this notebook, we focus on plates containing both U2OS and A549 parental cell lines that have been treated with compounds for 48 hours. More information about the batch and plate metadata can be found in the [CPJUMP1 documentation](https://github.com/carpenter-singh-lab/2024_Chandrasekaran_NatureMethods/blob/main/README.md#batch-and-plate-metadata).
 
-# In[ ]:
+# In[4]:
 
 
 # loading config file and setting experimental metadata URL
@@ -102,13 +102,72 @@ print("shape: ", exp_metadata.shape)
 exp_metadata
 
 
+#
+# In this section, we download:
+#
+# 1. **Compound metadata** from the CPJUMP1 repository
+# 2. **Mechanism of action (MOA) metadata** from the Broad Repurposing Hub
+#
+# We then merge both datasets into a single compound metadata table.
+#
+# If a compound has missing MOA information, the value in `Metadata_moa` is replaced with `"unknown"`. This indicates that no MOA annotation is currently available for that compound.
+
+# In[5]:
+
+
+# downloading compound metadata from cpjump1 repo
+CPJUMP_compound_metadata = pl.read_csv(
+    nb_configs["links"]["CPJUMP1-compound-metadata-source"],
+    separator="\t",
+    has_header=True,
+    encoding="utf-8",
+)
+
+# downloading compound moa metadata from broad institute drug repurposing hub
+broad_compound_moa_metadata = pl.read_csv(
+    nb_configs["links"]["Broad-compounds-moa-source"],
+    separator="\t",
+    skip_rows=9,
+    encoding="utf8-lossy",
+)
+
+# for both dataframes make sure that all columns have "Metadata_" in the column name
+CPJUMP_compound_metadata = CPJUMP_compound_metadata.rename(
+    {col: f"Metadata_{col}" for col in CPJUMP_compound_metadata.columns}
+)
+broad_compound_moa_metadata = broad_compound_moa_metadata.rename(
+    {col: f"Metadata_{col}" for col in broad_compound_moa_metadata.columns}
+)
+
+# replace null values in the boroad compound moa to "unknown"
+broad_compound_moa_metadata = broad_compound_moa_metadata.with_columns(
+    pl.col("Metadata_moa").fill_null("unknown")
+)
+
+
+# In[6]:
+
+
+complete_compound_metadata = CPJUMP_compound_metadata.join(
+    broad_compound_moa_metadata,
+    left_on="Metadata_pert_iname",
+    right_on="Metadata_pert_iname",
+    how="left",
+)
+
+# save the complete compound metadata as a tsv file
+complete_compound_metadata.write_csv(
+    cpjump1_dir / f"cpjump1_{pert_type}_compound-metadata.tsv", separator="\t"
+)
+
+
 # ## Downloading MitoCheck Data
 #
 # In this section, we download the MitoCheck data generated in [this study](https://pmc.ncbi.nlm.nih.gov/articles/PMC3108885/).
 #
 # Specifically, we are downloading data that has already been normalized and feature-selected. The normalization and feature selection pipeline is available [here](https://github.com/WayScience/mitocheck_data/tree/main/3.normalize_data).
 
-# In[5]:
+# In[7]:
 
 
 # url source for the MitoCheck data
@@ -122,13 +181,13 @@ else:
 
 # ## Downloading CFReT Data
 #
-# In this section, we download feature-selected single-cell profiles from the CFReT plate `localhost230405150001`. This plate contains three treatments: DMSO (control), drug_x, and TGFRi. The dataset consists of high-content imaging data that has already undergone feature selection, making it suitable for downstream analysis.
+# This section downloads and saves feature-selected single-cell profiles from the CFReT plate `localhost230405150001`.
 #
-# **Key Points:**
-# - Only the processed single-cell profiles are downloaded [here](https://github.com/WayScience/cellpainting_predicts_cardiac_fibrosis/tree/main/3.process_cfret_features/data/single_cell_profiles)
-# - The CFReT dataset was used and published in [this study](https://doi.org/10.1161/CIRCULATIONAHA.124.071956).
+# - Only processed single-cell profiles are downloaded (no raw data).
+# - Data is saved as a Parquet file for fast access.
+# - Used in published cardiac fibrosis research ([study link](https://doi.org/10.1161/CIRCULATIONAHA.124.071956)).
 
-# In[ ]:
+# In[8]:
 
 
 # setting the source for the CFReT data
