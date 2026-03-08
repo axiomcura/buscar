@@ -71,8 +71,7 @@ def load_profiles(
     # check for supported file format
     if fpath.suffix.lower() not in [".parquet", ".pq", ".arrow"]:
         raise ValueError(
-            f"Unsupported file format: {fpath.suffix}. Supported formats are: ",
-            ".parquet, .pq, .arrow",
+            f"Unsupported file format: {fpath.suffix}. Supported formats are: .parquet, .pq, .arrow"
         )
 
     # load profiles

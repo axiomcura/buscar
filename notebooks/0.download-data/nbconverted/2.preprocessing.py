@@ -26,71 +26,13 @@ import polars as pl
 
 sys.path.append("../../")
 from utils.data_utils import add_cell_id_hash, split_meta_and_features
-from utils.io_utils import load_profiles
+from utils.io_utils import load_and_concat_profiles
 
 # ## Helper functions
 #
 # Contains helper function that pertains to this notebook.
 
 # In[2]:
-
-
-def load_and_concat_profiles(
-    profile_dir: str | pathlib.Path,
-    shared_features: list[str] | None = None,
-    specific_plates: list[pathlib.Path] | None = None,
-) -> pl.DataFrame:
-    """
-    Load all profile files from a directory and concatenate them into a single Polars DataFrame.
-
-    Parameters
-    ----------
-    profile_dir : str or pathlib.Path
-        Directory containing the profile files (.parquet).
-    shared_features : Optional[list[str]], optional
-        List of shared feature names to filter the profiles. If None, all features are loaded.
-    specific_plates : Optional[list[pathlib.Path]], optional
-        List of specific plate file paths to load. If None, all profiles in the directory are loaded.
-
-    Returns
-    -------
-    pl.DataFrame
-        Concatenated Polars DataFrame containing all loaded profiles.
-    """
-    # Ensure profile_dir is a pathlib.Path
-    if isinstance(profile_dir, str):
-        profile_dir = pathlib.Path(profile_dir)
-    elif not isinstance(profile_dir, pathlib.Path):
-        raise TypeError("profile_dir must be a string or a pathlib.Path object")
-
-    # Validate specific_plates
-    if specific_plates is not None:
-        if not isinstance(specific_plates, list):
-            raise TypeError("specific_plates must be a list of pathlib.Path objects")
-        if not all(isinstance(path, pathlib.Path) for path in specific_plates):
-            raise TypeError(
-                "All elements in specific_plates must be pathlib.Path objects"
-            )
-
-    # Use specific_plates if provided, otherwise gather all .parquet files
-    if specific_plates is not None:
-        # Validate that all specific plate files exist
-        for plate_path in specific_plates:
-            if not plate_path.exists():
-                raise FileNotFoundError(f"Profile file not found: {plate_path}")
-        files_to_load = specific_plates
-    else:
-        files_to_load = list(profile_dir.glob("*.parquet"))
-        if not files_to_load:
-            raise FileNotFoundError(f"No profile files found in {profile_dir}")
-
-    # Load and concatenate profiles
-    loaded_profiles = [
-        load_profiles(f, shared_features=shared_features) for f in files_to_load
-    ]
-
-    # Concatenate all loaded profiles
-    return pl.concat(loaded_profiles, rechunk=True)
 
 
 def split_data(
@@ -259,7 +201,7 @@ cpjump1_profiles = load_and_concat_profiles(
 cpjump1_profiles = add_cell_id_hash(cpjump1_profiles)
 
 
-# Next we annotate the compound treatments in the CPJUMP1 dataset, we annotate each cell with Mechanism of Action (MoA) information using the [Clue Drug Repurposing Hub](https://clue.io/data/REP#REP). This resource provides comprehensive drug and tool compound annotations, including target information and clinical development status.
+# Next we annotate the compound treatments in the CPJUMP1 dataset, we annotate each row with  Mechanism of Action (MoA) information using the [Clue Drug Repurposing Hub](https://clue.io/data/REP#REP) and cell type. This resource provides comprehensive drug and tool compound annotations, including target information and clinical development status.
 #
 
 # In[6]:
@@ -277,6 +219,13 @@ cpjump1_profiles = cpjump1_profiles.join(
     rep_moa_df, on="Metadata_pert_iname", how="left"
 )
 
+# merge cell type metadata with cpjump1_profiles on Metadata_Plate
+cell_type_metadata = exp_metadata.select(["Assay_Plate_Barcode", "Cell_type"]).rename(
+    {"Assay_Plate_Barcode": "Metadata_Plate", "Cell_type": "Metadata_cell_type"}
+)
+cpjump1_profiles = cpjump1_profiles.join(
+    cell_type_metadata, on="Metadata_Plate", how="left"
+)
 
 # split meta and feature
 meta_cols, features_cols = split_meta_and_features(cpjump1_profiles)
