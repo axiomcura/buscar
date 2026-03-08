@@ -37,7 +37,8 @@ def load_profiles(
     fpath : str | pathlib.Path
         Path to the file containing single-cell profiles.
     convert_to_f32 : bool, optional
-        If True, converts all Float64 columns to Float32 to save memory. Default is False
+        If True, converts all Float64 columns to Float32 to save memory. Default is
+        False
     verbose : bool, optional
         If True, prints information about the loaded profiles. Default is False.
     shared_features : list[str] | None, optional
@@ -251,7 +252,8 @@ def extract_file(
     file_path : pathlib.Path | str
         Path to the compressed file.
     extract_dir : pathlib.Path | str, optional
-        Directory where the file should be extracted. If None, extracts to the same directory as the file.
+        Directory where the file should be extracted. If None, extracts to the same
+        directory as the file.
 
     Returns
     -------
@@ -339,16 +341,19 @@ def load_and_concat_profiles(
     specific_plates: list[pathlib.Path] | None = None,
 ) -> pl.DataFrame:
     """
-    Load all profile files from a directory and concatenate them into a single Polars DataFrame.
+    Load all profile files from a directory and concatenate them into a single Polars
+    DataFrame.
 
     Parameters
     ----------
     profile_dir : str or pathlib.Path
         Directory containing the profile files (.parquet).
     shared_features : Optional[list[str]], optional
-        List of shared feature names to filter the profiles. If None, all features are loaded.
+        List of shared feature names to filter the profiles. If None, all features are
+        loaded.
     specific_plates : Optional[list[pathlib.Path]], optional
-        List of specific plate file paths to load. If None, all profiles in the directory are loaded.
+        List of specific plate file paths to load. If None, all profiles in the
+        directory are loaded.
 
     Returns
     -------
