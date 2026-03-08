@@ -316,7 +316,7 @@ cpjump1_profiles.select(meta_cols + features_cols).write_parquet(concat_output_p
 #
 # The preprocessing ensures that all MitoCheck datasets share a common feature space and are ready for comparative analysis with CPJUMP1 profiles.
 
-# In[8]:
+# In[7]:
 
 
 # load in mitocheck profiles and save as parquet
@@ -360,7 +360,7 @@ mitocheck_pos_control_profiles = mitocheck_pos_control_profiles.with_columns(
 
 # Filter Cell Profiler (CP) features and preprocess columns by removing the "CP__" prefix to standardize feature names for downstream analysis.
 
-# In[9]:
+# In[8]:
 
 
 # Split profiles to only retain cell profiler features
@@ -383,7 +383,7 @@ cp_mitocheck_pos_control_profiles = remove_feature_prefixes(
 
 # Splitting the metadata and feature columns for each dataset to enable targeted downstream analysis and ensure consistent data structure across all profiles.
 
-# In[10]:
+# In[9]:
 
 
 # manually selecting metadata features that are present across all 3 profiles
@@ -432,7 +432,7 @@ with open(mitocheck_dir / "mitocheck_feature_space_configs.json", "w") as f:
     )
 
 
-# In[11]:
+# In[10]:
 
 
 # create concatenated mitocheck profiles
@@ -470,7 +470,7 @@ concat_mitocheck_profiles.write_parquet(
 # - **Unique cell identification**: Adding `Metadata_cell_id` column with unique hash values based on all profile features to enable precise cell tracking and deduplication
 #
 
-# In[15]:
+# In[11]:
 
 
 # load in cfret profiles and add a unique cell ID
