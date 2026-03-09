@@ -267,16 +267,16 @@ def add_cell_id_hash(
 def shuffle_feature_profiles(
     profiles: pl.DataFrame,
     feature_cols: list[str],
-    method: Literal["row", "column"] = "row",
+    method: Literal["row", "column", "label"] = "row",
+    label_col: str | None = None,
     seed: int = 42,
 ) -> pl.DataFrame:
     """
-    Return a shuffled copy of the profiles DataFrame for use as a null baseline.
+    Create a shuffled version of the dataset where each morphological feature
+    column is independently shuffled (values permuted within each column).
 
-    - ``method="row"``: shuffles entire rows, preserving feature correlations within
-    cells.
-    - ``method="column"``: shuffles each feature column independently, breaking
-      inter-feature correlations while preserving each feature's marginal distribution.
+    This breaks the correlation structure between features while preserving
+    the marginal distributions, creating a null baseline for comparison.
 
     Parameters
     ----------
@@ -315,19 +315,17 @@ def shuffle_feature_profiles(
 
     # column-wise shuffling
     elif method == "column":
-        shuffled_features = {}
-        for col in feature_cols:
-            values = profiles[col].to_numpy().copy()
-            np.random.shuffle(values)
-            shuffled_features[col] = values
-
-        # Build the shuffled dataframe
-        shuffled_df = profiles.select(meta_cols)
-        for col in feature_cols:
-            shuffled_df = shuffled_df.with_columns(
-                pl.Series(name=col, values=shuffled_features[col])
+        return profiles.with_columns(
+            [pl.col(col).shuffle(seed=seed + i) for i, col in enumerate(feature_cols)]
+        )
+    elif method == "label":
+        if label_col is None:
+            raise ValueError(
+                "label_col must be specified when using 'label' shuffle method."
             )
-        return shuffled_df
+
+        # return the profiels with
+        return profiles.with_columns(pl.col(label_col).shuffle(seed=seed))
     else:
         raise ValueError(f"Unknown shuffle method: {method}")
 
@@ -397,3 +395,39 @@ def remove_feature_prefixes(df: pl.DataFrame, prefix: str = "CP__") -> pl.DataFr
         DataFrame with the prefix removed from all matching column names.
     """
     return df.rename(lambda x: x.replace(prefix, "") if prefix in x else x)
+
+
+def shuffle_signatures(
+    on_sig: list[str], off_sig: list[str], all_features: list[str], seed: int = 0
+) -> tuple[list[str], list[str]]:
+    """
+    Breaks biological meaning of on/off signatures by randomly sampling
+    features from the full feature space, while preserving the original
+    on/off size ratio.
+
+    Preserves:
+      - len(on_sig) and len(off_sig)  ← ratio intact
+      - Features drawn from same pool as real signatures
+
+    Breaks:
+      - Which specific features are "on" vs "off"
+      - Any biological grouping derived from KS test
+    """
+    rng = np.random.default_rng(seed)
+
+    n_on = len(on_sig)
+    n_off = len(off_sig)
+
+    # guard: need enough features to fill both without overlap
+    assert n_on + n_off <= len(all_features), (
+        f"Not enough features ({len(all_features)}) to fill "
+        f"on ({n_on}) + off ({n_off}) without replacement"
+    )
+
+    # sample without replacement so on and off don't overlap
+    sampled = rng.choice(all_features, size=n_on + n_off, replace=False)
+
+    shuffled_on = sampled[:n_on].tolist()
+    shuffled_off = sampled[n_on:].tolist()
+
+    return shuffled_on, shuffled_off
